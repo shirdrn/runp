@@ -11,7 +11,7 @@ import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessageHandler;
 import cn.shiyanjun.ddc.running.platform.slave.WorkerMessageListener;
 
-public class Worker extends AbstractComponent<Context> implements LifecycleAware {
+public class Worker extends AbstractComponent implements LifecycleAware {
 
 	private LifecycleAware endpoint;
 	private final RpcChannelHandler rpcHandler;
@@ -26,7 +26,7 @@ public class Worker extends AbstractComponent<Context> implements LifecycleAware
 	
 	@Override
 	public void start() {
-		endpoint = NettyRpcClient.newClient(context, rpcHandler, messageListener);
+		endpoint = NettyRpcClient.newClient(getContext(), rpcHandler, messageListener);
 		endpoint.start();		
 	}
 

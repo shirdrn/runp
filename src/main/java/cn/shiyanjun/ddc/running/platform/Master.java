@@ -20,7 +20,7 @@ import cn.shiyanjun.ddc.running.platform.common.MqMessageAccessor;
 import cn.shiyanjun.ddc.running.platform.common.TaskAssignmentProtocol;
 import cn.shiyanjun.ddc.running.platform.master.MasterMessageListener;
 
-public class Master extends AbstractComponent<Context> implements LifecycleAware {
+public class Master extends AbstractComponent implements LifecycleAware {
 
 	private static final Log LOG = LogFactory.getLog(Master.class);
 	private LifecycleAware endpoint;
@@ -42,7 +42,7 @@ public class Master extends AbstractComponent<Context> implements LifecycleAware
 	
 	@Override
 	public void start() {
-		endpoint = NettyRpcClient.newClient(context, rpcHandler, messageListener);
+		endpoint = NettyRpcClient.newClient(getContext(), rpcHandler, messageListener);
 		executorService = Executors.newFixedThreadPool(1, new NamedThreadFactory("MASTER"));
 		executorService.execute(new PullTaskThread());
 		endpoint.start();		
