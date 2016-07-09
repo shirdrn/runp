@@ -20,6 +20,14 @@ import cn.shiyanjun.ddc.running.platform.common.MqMessageAccessor;
 import cn.shiyanjun.ddc.running.platform.common.TaskAssignmentProtocol;
 import cn.shiyanjun.ddc.running.platform.master.MasterMessageListener;
 
+/**
+ * Master is the coordinator of running platform, its responsibility is
+ * to accept {@link Worker}s' heartbeat messages to acquire the states and resources
+ *  of each worker node. And finally the Scheduling Platform should be told to
+ *  decide next scheduling choice.
+ * 
+ * @author yanjun
+ */
 public class Master extends AbstractComponent implements LifecycleAware {
 
 	private static final Log LOG = LogFactory.getLog(Master.class);

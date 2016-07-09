@@ -27,11 +27,6 @@
 			<version>${ddc.version}</version>
 		</dependency>
 		<dependency>
-			<groupId>cn.shiyanjun</groupId>
-			<artifactId>task-launchers</artifactId>
-			<version>${ddc.version}</version>
-		</dependency>
-		<dependency>
 			<groupId>net.sf.json-lib</groupId>
 			<artifactId>json-lib</artifactId>
 			<version>2.3</version>
