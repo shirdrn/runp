@@ -1,14 +1,5 @@
 package cn.shiyanjun.ddc.running.platform.master;
 
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-
 import cn.shiyanjun.ddc.api.Context;
 import cn.shiyanjun.ddc.api.network.MessageListener;
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
@@ -19,7 +10,11 @@ import cn.shiyanjun.ddc.running.platform.common.TaskAssignmentProtocol;
 import cn.shiyanjun.ddc.running.platform.common.WorkerInfo;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageTypes;
-import net.sf.json.JSONObject;
+import com.alibaba.fastjson.JSONObject;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import java.util.concurrent.*;
 
 /**
  * In <code>Master</code> side, its responsibility is to handle messages 
@@ -99,7 +94,7 @@ public class MasterMessageListener extends AbstractMessageListener implements Me
 			String body = msg.getBody();
 			if(body != null) {
 				LOG.info("Heartbeat message: id=" + id + ", body=" + body);
-				JSONObject jsonBody = JSONObject.fromObject(body);
+				JSONObject jsonBody = JSONObject.parseObject(body);
 				String host = jsonBody.getString(JsonKeys.HOST);
 				// record worker information
 				WorkerInfo workerInfo = new WorkerInfo();
