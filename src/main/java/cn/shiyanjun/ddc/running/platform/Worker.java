@@ -1,33 +1,38 @@
 package cn.shiyanjun.ddc.running.platform;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import cn.shiyanjun.ddc.api.Context;
 import cn.shiyanjun.ddc.api.LifecycleAware;
 import cn.shiyanjun.ddc.api.common.AbstractComponent;
 import cn.shiyanjun.ddc.api.common.ContextImpl;
-import cn.shiyanjun.ddc.api.network.MessageListener;
 import cn.shiyanjun.ddc.network.NettyRpcClient;
-import cn.shiyanjun.ddc.network.common.RpcChannelHandler;
-import cn.shiyanjun.ddc.network.common.RpcMessage;
+import cn.shiyanjun.ddc.network.common.MessageDispatcher;
 import cn.shiyanjun.ddc.network.common.RpcMessageHandler;
-import cn.shiyanjun.ddc.running.platform.slave.WorkerMessageListener;
+import cn.shiyanjun.ddc.running.platform.master.MasterMessageDispatcher;
 
 public class Worker extends AbstractComponent implements LifecycleAware {
 
+	private static final Log LOG = LogFactory.getLog(Worker.class);
 	private LifecycleAware endpoint;
-	private final RpcChannelHandler rpcHandler;
-	private final MessageListener<RpcMessage> messageListener;
+	private final RpcMessageHandler rpcMessageHandler;
+	private final MessageDispatcher dispatcher;
 	
 	public Worker(Context context) {
 		super(context);
-		rpcHandler = new RpcMessageHandler(context);
-		messageListener = new WorkerMessageListener(context, rpcHandler);
-		rpcHandler.setMessageListener(messageListener);
+		dispatcher = new MasterMessageDispatcher(context);
+		rpcMessageHandler = new RpcMessageHandler(context, dispatcher);
+		dispatcher.setRpcMessageHandler(rpcMessageHandler);
 	}
 	
 	@Override
 	public void start() {
-		endpoint = NettyRpcClient.newClient(getContext(), rpcHandler, messageListener);
-		endpoint.start();		
+		endpoint = NettyRpcClient.newClient(getContext(), rpcMessageHandler);
+		endpoint.start();
+		
+		dispatcher.start();
+		LOG.info("Worker started.");
 	}
 
 	@Override

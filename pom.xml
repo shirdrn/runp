@@ -8,6 +8,9 @@
 
 	<properties>
 		<ddc.version>0.0.1-SNAPSHOT</ddc.version>
+		<fastjson.version>1.2.7</fastjson.version>
+		<guava.version>19.0</guava.version>
+		<amqp-client.version>3.6.5</amqp-client.version>
 	</properties>
 
 	<dependencies>
@@ -18,18 +21,23 @@
 		</dependency>
 		<dependency>
 			<groupId>cn.shiyanjun</groupId>
-			<artifactId>job-dao</artifactId>
-			<version>${ddc.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>cn.shiyanjun</groupId>
 			<artifactId>network-rpc</artifactId>
 			<version>${ddc.version}</version>
 		</dependency>
 		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<version>${guava.version}</version>
+		</dependency>
+		<dependency>
 			<groupId>com.alibaba</groupId>
 			<artifactId>fastjson</artifactId>
-			<version>1.2.7</version>
+			<version>${fastjson.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.rabbitmq</groupId>
+			<artifactId>amqp-client</artifactId>
+			<version>${amqp-client.version}</version>
 		</dependency>
 	</dependencies>
 
@@ -42,8 +50,8 @@
 					<version>2.5</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
-						<source>1.7</source>
-						<target>1.7</target>
+						<source>1.8</source>
+						<target>1.8</target>
 					</configuration>
 				</plugin>
 			</plugins>
