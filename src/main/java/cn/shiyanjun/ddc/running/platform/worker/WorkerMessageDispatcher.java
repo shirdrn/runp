@@ -1,43 +1,54 @@
 package cn.shiyanjun.ddc.running.platform.worker;
 
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONObject;
+import com.google.common.collect.Queues;
 
 import cn.shiyanjun.ddc.api.Context;
-import cn.shiyanjun.ddc.api.constants.ConfigKeys;
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
 import cn.shiyanjun.ddc.network.common.AbstractMessageDispatcher;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
+import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 
 public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 
 	private static final Log LOG = LogFactory.getLog(WorkerMessageDispatcher.class);
+	private final RegistrationSender registrationSender;
 	private final HeartbeatReporter heartbeatReporter;
-	private final ResourceReporter resourceReporter;
 	private final TaskProgressReporter taskProgressReporter;
-	private final TaskAssingmentProcessor taskAssingmentProcessor;
+	private final TaskAssingmentReceiver taskAssingmentReceiver;
+	private final AtomicLong idGen = new AtomicLong();
+	private final String workerId;
+	private final String workerHost;
+	private final int heartbeatIntervalMillis;
+	
+	private final BlockingQueue<RpcMessage> taskWaitingQueue = Queues.newLinkedBlockingQueue();
 	
 	public WorkerMessageDispatcher(Context context) {
 		super(context);
-		register(new RegistrationProcessor(MessageType.WORKER_REGISTRATION.getCode()));
+		workerId = context.get(RunpConfigKeys.WORKER_ID);
+		workerHost = context.get(RunpConfigKeys.WORKER_HOST);
+		heartbeatIntervalMillis = context.getInt(RunpConfigKeys.WORKER_HEARTBEAT_INTERVALMILLIS, 60000);
+		registrationSender = new RegistrationSender(MessageType.WORKER_REGISTRATION.getCode());
 		heartbeatReporter = new HeartbeatReporter(MessageType.HEART_BEAT.getCode());
-		resourceReporter = new ResourceReporter(MessageType.RESOURCE_REPORT.getCode());
 		taskProgressReporter = new TaskProgressReporter(MessageType.TASK_PROGRESS.getCode());
-		taskAssingmentProcessor = new TaskAssingmentProcessor(MessageType.TASK_ASSIGNMENT.getCode());
+		taskAssingmentReceiver = new TaskAssingmentReceiver(MessageType.TASK_ASSIGNMENT.getCode());
 		
-		register(resourceReporter);
+		register(registrationSender);
 		register(taskProgressReporter);
 		register(heartbeatReporter);
-		register(taskAssingmentProcessor);
+		register(taskAssingmentReceiver);
 	}
 	
 	@Override
@@ -45,46 +56,32 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		super.start();
 	}
 	
-	final class RegistrationProcessor extends RunnableMessageListener<RpcMessage> {
-
-		public RegistrationProcessor(int messageType) {
-			super(messageType);
-		}
-
-		@Override
-		public void handle(RpcMessage message) {
-						
-		}
-		
+	private void ask(RpcMessage message) {
+		getRpcMessageHandler().ask(message);
 	}
 	
-	final class TaskAssingmentProcessor extends RunnableMessageListener<RpcMessage> {
-		
-		public TaskAssingmentProcessor(int messageType) {
+	final class RegistrationSender extends RunnableMessageListener<RpcMessage> {
+
+		public RegistrationSender(int messageType) {
 			super(messageType);
 		}
 
 		@Override
 		public void handle(RpcMessage message) {
-			
+			ask(message);
 		}
 
 	}
 	
-	/**
-	 * Send resource report messages to remote <code>Master</code>.
-	 * 
-	 * @author yanjun
-	 */
-	final class ResourceReporter extends RunnableMessageListener<RpcMessage> {
+	final class TaskAssingmentReceiver extends RunnableMessageListener<RpcMessage> {
 		
-		public ResourceReporter(int messageType) {
+		public TaskAssingmentReceiver(int messageType) {
 			super(messageType);
 		}
 
 		@Override
 		public void handle(RpcMessage message) {
-			
+			taskWaitingQueue.add(message);
 		}
 
 	}
@@ -102,7 +99,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 
 		@Override
 		public void handle(RpcMessage message) {
-			
+			ask(message);
 		}
 
 	}
@@ -124,21 +121,19 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		public void start() {
 			super.start();
 			scheduledExecutorService = Executors.newScheduledThreadPool(1, new NamedThreadFactory("HEARTBEAT"));
-			int period = context.getInt(ConfigKeys.RPC_HEARTBEAT_INTERVAL, 5000);
 			scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-
 				@Override
 				public void run() {
-					RpcMessage hb = new RpcMessage(System.currentTimeMillis(), MessageType.HEART_BEAT.getCode());
+					RpcMessage hb = new RpcMessage(idGen.incrementAndGet(), MessageType.HEART_BEAT.getCode());
 					JSONObject body = new JSONObject();
-					body.put(JsonKeys.HOST, "10.10.0.123");
+					body.put(JsonKeys.WORKER_ID, workerId);
+					body.put(JsonKeys.WORKER_HOST, workerHost);
 					hb.setBody(body.toJSONString());
 					hb.setTimestamp(System.currentTimeMillis());
-					addMessage(hb);
-					LOG.info("Heartbeart sent: id=" + hb.getId() + ", body=" + hb.getBody());
+					heartbeatReporter.addMessage(hb);
+					LOG.info("Heartbeart prepared: id=" + hb.getId() + ", body=" + hb.getBody());
 				}
-				
-			}, 1, period, TimeUnit.MILLISECONDS);
+			}, 3000, heartbeatIntervalMillis, TimeUnit.MILLISECONDS);
 		}
 		
 		@Override
@@ -149,7 +144,8 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 
 		@Override
 		public void handle(RpcMessage message) {
-			getRpcMessageHandler().ask(message);
+			ask(message);
+			LOG.info("Heartbeart sent: id=" + message.getId() + ", body=" + message.getBody());
 		}
 
 	}

@@ -5,8 +5,7 @@ public enum MessageType {
 	TASK_ASSIGNMENT(1),
 	TASK_PROGRESS(2),
 	HEART_BEAT(3),
-	RESOURCE_REPORT(4),
-	WORKER_REGISTRATION(5);
+	WORKER_REGISTRATION(4);
 	
 	private int code;
 	

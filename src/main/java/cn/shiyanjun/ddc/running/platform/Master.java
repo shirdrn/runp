@@ -30,7 +30,7 @@ import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
 import cn.shiyanjun.ddc.running.platform.common.AbstractRunnableConsumer;
 import cn.shiyanjun.ddc.running.platform.common.MQAccessService;
 import cn.shiyanjun.ddc.running.platform.common.RabbitMQAccessService;
-import cn.shiyanjun.ddc.running.platform.constants.ConfigKeys;
+import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import cn.shiyanjun.ddc.running.platform.master.MasterMessageDispatcher;
 import cn.shiyanjun.ddc.running.platform.utils.ResourceUtils;
@@ -65,8 +65,8 @@ public class Master extends AbstractComponent implements LifecycleAware {
 		
 		ResourceUtils.registerResource(rabbitmqConfig, ConnectionFactory.class);
 		final ConnectionFactory connectionFactory = ResourceUtils.getResource(ConnectionFactory.class);
-		String taskRequestQName = context.get(ConfigKeys.MQ_TASK_REQUEST_QUEUE_NAME);
-		String taskResultQName = context.get(ConfigKeys.MQ_TASK_RESULT_QUEUE_NAME);
+		String taskRequestQName = context.get(RunpConfigKeys.MQ_TASK_REQUEST_QUEUE_NAME);
+		String taskResultQName = context.get(RunpConfigKeys.MQ_TASK_RESULT_QUEUE_NAME);
 		taskRequestMQAccessService = new RabbitMQAccessService(taskRequestQName, connectionFactory);
 		taskResultMQAccessService = new RabbitMQAccessService(taskResultQName, connectionFactory);
 		idGenerator = new AtomicLong(System.currentTimeMillis());
