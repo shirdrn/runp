@@ -23,6 +23,7 @@ import cn.shiyanjun.ddc.api.constants.TaskType;
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
 import cn.shiyanjun.ddc.network.NettyRpcServer;
 import cn.shiyanjun.ddc.network.common.MessageDispatcher;
+import cn.shiyanjun.ddc.network.common.NettyRpcEndpoint;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessageHandler;
 import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
@@ -73,7 +74,7 @@ public class Master extends AbstractComponent implements LifecycleAware {
 	
 	@Override
 	public void start() {
-		endpoint = NettyRpcServer.newServer(context, rpcMessageHandler);
+		endpoint = NettyRpcEndpoint.newEndpoint(NettyRpcServer.class, context, rpcMessageHandler);
 		endpoint.start();		
 		executorService = Executors.newFixedThreadPool(1, new NamedThreadFactory("MASTER"));
 		dispatcher.register(taskAssignment);
