@@ -1,6 +1,10 @@
 package cn.shiyanjun.ddc.running.platform.master;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.collect.Maps;
@@ -15,8 +19,9 @@ import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 
 public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 
+	private static final Log LOG = LogFactory.getLog(MasterMessageDispatcher.class);
 	private final ConcurrentMap<String, WorkerInfo> workers = Maps.newConcurrentMap();
-	private final ConcurrentMap<String, ResourceData> resources = Maps.newConcurrentMap();
+	private final ConcurrentMap<String, Map<String, ResourceData>> resources = Maps.newConcurrentMap();
 	
 	public MasterMessageDispatcher(Context context) {
 		super(context);
@@ -42,12 +47,21 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 			JSONObject body = JSONObject.parseObject(message.getBody());
 			String workerId = body.getString(JsonKeys.WORKER_ID);
 			JSONObject resourceTypes = body.getJSONObject(JsonKeys.RESOURCE_TYPES);
+			Map<String, ResourceData> rds = resources.get(workerId);
+			if(rds == null) {
+				rds = Maps.newHashMap();
+			}
 			for(String type : resourceTypes.keySet()) {
 				int capacity = resourceTypes.getIntValue(type);
-				ResourceData resource = new ResourceData(type, capacity);
-				ResourceData oldResource = resources.putIfAbsent(workerId, resource);
+				ResourceData newResource = new ResourceData(type, capacity);
+				ResourceData oldResource = rds.putIfAbsent(type, newResource);
 				if(oldResource != null) {
-					
+					if(resources.equals(oldResource)) {
+						LOG.warn("Resources already registered: wokerId=" + workerId + ", " + newResource);
+					} else {
+						// update resource statuses
+						LOG.info("Resources updated: oldResource=" + oldResource + ", newResource=" + newResource);
+					}
 				}
 			}
 		}
@@ -112,6 +126,25 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 			super();
 			this.type = type;
 			this.capacity = capacity;
+		}
+		
+		@Override
+		public int hashCode() {
+			return 31 * type.hashCode() + 31 * capacity;
+		}
+		
+		@Override
+		public boolean equals(Object obj) {
+			ResourceData other = (ResourceData) obj;
+			return type.equals(other.type) && capacity == other.capacity;
+		}
+		
+		@Override
+		public String toString() {
+			JSONObject data = new JSONObject(true);
+			data.put("type", type);
+			data.put("capacity", capacity);
+			return data.toJSONString();
 		}
 	}
 	

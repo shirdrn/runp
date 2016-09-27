@@ -1,11 +1,16 @@
 package cn.shiyanjun.ddc.running.platform.constants;
 
+import java.util.Optional;
+import java.util.stream.Stream;
+
 public enum MessageType {
 
 	TASK_ASSIGNMENT(1),
-	TASK_PROGRESS(2),
-	HEART_BEAT(3),
-	WORKER_REGISTRATION(4);
+	ACK_TASK_ASSIGNMENT(2),
+	TASK_PROGRESS(3),
+	HEART_BEAT(4),
+	WORKER_REGISTRATION(5),
+	ACK_WORKER_REGISTRATION(6);
 	
 	private int code;
 	
@@ -15,6 +20,12 @@ public enum MessageType {
 	
 	public int getCode() {
 		return code;
+	}
+	
+	public static Optional<MessageType> fromCode(int code) {
+		return Stream.of(values()).filter((tasktype) -> {
+			return tasktype.code == code;
+		}).findAny();
 	}
 	
 }

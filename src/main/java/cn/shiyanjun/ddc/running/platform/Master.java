@@ -28,10 +28,11 @@ import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessageHandler;
 import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
 import cn.shiyanjun.ddc.running.platform.common.AbstractRunnableConsumer;
+import cn.shiyanjun.ddc.running.platform.common.EndpointThread;
 import cn.shiyanjun.ddc.running.platform.common.MQAccessService;
 import cn.shiyanjun.ddc.running.platform.common.RabbitMQAccessService;
-import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
+import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import cn.shiyanjun.ddc.running.platform.master.MasterMessageDispatcher;
 import cn.shiyanjun.ddc.running.platform.utils.ResourceUtils;
 
@@ -46,7 +47,7 @@ import cn.shiyanjun.ddc.running.platform.utils.ResourceUtils;
 public class Master extends AbstractComponent implements LifecycleAware {
 
 	private static final Log LOG = LogFactory.getLog(Master.class);
-	private LifecycleAware endpoint;
+	private NettyRpcEndpoint endpoint;
 	private final RpcMessageHandler rpcMessageHandler;
 	private final MessageDispatcher dispatcher;
 	private final TaskAssignmentProcessor taskAssignment;
@@ -55,6 +56,7 @@ public class Master extends AbstractComponent implements LifecycleAware {
 	private final MQAccessService taskRequestMQAccessService;
 	private final MQAccessService taskResultMQAccessService;
 	private final AtomicLong idGenerator;
+	private EndpointThread endpointThread;
 	
 	public Master(Context context) {
 		super(context);
@@ -70,21 +72,33 @@ public class Master extends AbstractComponent implements LifecycleAware {
 		taskRequestMQAccessService = new RabbitMQAccessService(taskRequestQName, connectionFactory);
 		taskResultMQAccessService = new RabbitMQAccessService(taskResultQName, connectionFactory);
 		idGenerator = new AtomicLong(System.currentTimeMillis());
+		endpoint = NettyRpcEndpoint.newEndpoint(NettyRpcServer.class, context, rpcMessageHandler);
+		endpointThread = new EndpointThread();
 	}
 	
 	@Override
 	public void start() {
-		endpoint = NettyRpcEndpoint.newEndpoint(NettyRpcServer.class, context, rpcMessageHandler);
-		endpoint.start();		
-		executorService = Executors.newFixedThreadPool(1, new NamedThreadFactory("MASTER"));
-		dispatcher.register(taskAssignment);
-		dispatcher.start();
-		
-		taskRequestMQAccessService.start();
-		taskResultMQAccessService.start();
-		
-		executorService.execute(new TaskRequestMQMessageConsumer(taskRequestMQAccessService.getQueueName(), taskRequestMQAccessService.getChannel()));
-		executorService.execute(new MockedMQProducer());
+		try {
+			LOG.info("Starting server endpoint...");
+			endpointThread.setEndpoint(endpoint);
+			new Thread(endpointThread).start();
+			Thread.sleep(3000);
+			LOG.info("Server started.");
+			
+			LOG.info("Starting master dispatcher...");
+			dispatcher.register(taskAssignment);
+			dispatcher.start();
+			LOG.info("Master dispatcher started.");
+			
+			taskRequestMQAccessService.start();
+			taskResultMQAccessService.start();
+			
+			executorService = Executors.newFixedThreadPool(1, new NamedThreadFactory("MASTER"));
+			executorService.execute(new TaskRequestMQMessageConsumer(taskRequestMQAccessService.getQueueName(), taskRequestMQAccessService.getChannel()));
+//		executorService.execute(new MockedMQProducer());
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
 	}
 
 	@Override
