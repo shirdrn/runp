@@ -22,6 +22,7 @@ import cn.shiyanjun.ddc.api.constants.JSONKeys;
 import cn.shiyanjun.ddc.api.constants.TaskType;
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
 import cn.shiyanjun.ddc.network.NettyRpcServer;
+import cn.shiyanjun.ddc.network.common.LocalMessage;
 import cn.shiyanjun.ddc.network.common.MessageDispatcher;
 import cn.shiyanjun.ddc.network.common.NettyRpcEndpoint;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
@@ -34,6 +35,7 @@ import cn.shiyanjun.ddc.running.platform.common.RabbitMQAccessService;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import cn.shiyanjun.ddc.running.platform.master.MasterMessageDispatcher;
+import cn.shiyanjun.ddc.running.platform.master.MasterRpcMessageHandler;
 import cn.shiyanjun.ddc.running.platform.utils.ResourceUtils;
 
 /**
@@ -47,6 +49,7 @@ import cn.shiyanjun.ddc.running.platform.utils.ResourceUtils;
 public class Master extends AbstractComponent implements LifecycleAware {
 
 	private static final Log LOG = LogFactory.getLog(Master.class);
+	private final String id = "Master";
 	private NettyRpcEndpoint endpoint;
 	private final RpcMessageHandler rpcMessageHandler;
 	private final MessageDispatcher dispatcher;
@@ -60,8 +63,8 @@ public class Master extends AbstractComponent implements LifecycleAware {
 	
 	public Master(Context context) {
 		super(context);
-		dispatcher = new MasterMessageDispatcher(context);
-		rpcMessageHandler = new RpcMessageHandler(context, dispatcher);
+		dispatcher = new MasterMessageDispatcher(id, context);
+		rpcMessageHandler = new MasterRpcMessageHandler(context, dispatcher);
 		dispatcher.setRpcMessageHandler(rpcMessageHandler);
 		taskAssignment = new TaskAssignmentProcessor(MessageType.TASK_ASSIGNMENT.getCode());
 		
@@ -93,8 +96,8 @@ public class Master extends AbstractComponent implements LifecycleAware {
 			taskRequestMQAccessService.start();
 			taskResultMQAccessService.start();
 			
-			executorService = Executors.newFixedThreadPool(1, new NamedThreadFactory("MASTER"));
-			executorService.execute(new TaskRequestMQMessageConsumer(taskRequestMQAccessService.getQueueName(), taskRequestMQAccessService.getChannel()));
+//			executorService = Executors.newFixedThreadPool(1, new NamedThreadFactory("MASTER"));
+//			executorService.execute(new TaskRequestMQMessageConsumer(taskRequestMQAccessService.getQueueName(), taskRequestMQAccessService.getChannel()));
 //		executorService.execute(new MockedMQProducer());
 		} catch (InterruptedException e) {
 			e.printStackTrace();
@@ -108,14 +111,14 @@ public class Master extends AbstractComponent implements LifecycleAware {
 		endpoint.stop();		
 	}
 	
-	final class TaskAssignmentProcessor extends RunnableMessageListener<RpcMessage> {
+	final class TaskAssignmentProcessor extends RunnableMessageListener<LocalMessage> {
 
 		public TaskAssignmentProcessor(int messageType) {
 			super(messageType);
 		}
 		
 		@Override
-		public void handle(RpcMessage message) {
+		public void handle(LocalMessage message) {
 			dispatcher.getRpcMessageHandler().ask(message);
 			
 		}
@@ -149,7 +152,11 @@ public class Master extends AbstractComponent implements LifecycleAware {
 					taskMsg.setId(idGenerator.incrementAndGet());
 					taskMsg.setType(MessageType.TASK_ASSIGNMENT.getCode());
 					taskMsg.setBody(taskReq.toJSONString());
-					taskAssignment.addMessage(taskMsg);
+					LocalMessage m = new LocalMessage();
+					m.setFromEndpointId(id);
+					// TODO
+					m.setToEndpointId(null);
+					taskAssignment.addMessage(m);
 					
 					getChannel().basicAck(deliveryTag, false);
 				}

@@ -18,6 +18,7 @@ import cn.shiyanjun.ddc.network.common.RpcMessageHandler;
 import cn.shiyanjun.ddc.running.platform.common.EndpointThread;
 import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import cn.shiyanjun.ddc.running.platform.worker.WorkerMessageDispatcher;
+import cn.shiyanjun.ddc.running.platform.worker.WorkerRpcMessageHandler;
 
 public class Worker extends AbstractComponent implements LifecycleAware {
 
@@ -32,7 +33,7 @@ public class Worker extends AbstractComponent implements LifecycleAware {
 	public Worker(Context context) {
 		super(context);
 		dispatcher = new WorkerMessageDispatcher(context);
-		rpcMessageHandler = new RpcMessageHandler(context, dispatcher);
+		rpcMessageHandler = new WorkerRpcMessageHandler(context, dispatcher);
 		dispatcher.setRpcMessageHandler(rpcMessageHandler);
 		
 		workerId = context.get(RunpConfigKeys.WORKER_ID, UUID.randomUUID().toString());

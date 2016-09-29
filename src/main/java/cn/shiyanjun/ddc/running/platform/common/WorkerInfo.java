@@ -6,7 +6,7 @@ public class WorkerInfo {
 
 	private String id;
 	private String host;
-	private Channel channel;
+	private volatile Channel channel;
 	private long lastContatTime;
 	
 	public String getId() {
