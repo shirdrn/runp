@@ -98,7 +98,7 @@ public class Master extends AbstractComponent implements LifecycleAware {
 			
 //			executorService = Executors.newFixedThreadPool(1, new NamedThreadFactory("MASTER"));
 //			executorService.execute(new TaskRequestMQMessageConsumer(taskRequestMQAccessService.getQueueName(), taskRequestMQAccessService.getChannel()));
-//		executorService.execute(new MockedMQProducer());
+//			executorService.execute(new MockedMQProducer());
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}

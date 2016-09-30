@@ -2,6 +2,9 @@ package cn.shiyanjun.ddc.running.platform.master;
 
 import java.util.concurrent.ConcurrentMap;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.collect.Maps;
 
@@ -19,6 +22,7 @@ import io.netty.channel.ChannelHandlerContext;
 
 public class MasterRpcMessageHandler extends RpcMessageHandler {
 
+	private static final Log LOG = LogFactory.getLog(MasterRpcMessageHandler.class);
 	private final ConcurrentMap<String, Channel> workerIdToChannel = Maps.newConcurrentMap();
 	private final ConcurrentMap<Channel, String> channelToWorkerId = Maps.newConcurrentMap();
 	
@@ -28,14 +32,17 @@ public class MasterRpcMessageHandler extends RpcMessageHandler {
 
 	@Override
 	protected void sendToRemotePeer(LocalMessage request, boolean needRelpy, int timeoutMillis) {
-		OutboxMessage message = new OutboxMessage();
+		RpcMessage m = request.getRpcMessage();
 		String to = request.getToEndpointId();
 		Channel channel = workerIdToChannel.get(to);
-		message.getRpcMessage().setNeedReply(needRelpy);
+		LOG.debug("Send to worker: workerChannel=" + channel);
+		LOG.debug("Send to worker: rpcMessage=" + m);
+		
+		OutboxMessage message = new OutboxMessage();
+		message.setRpcMessage(m);
 		message.setChannel(channel);
 		message.setTimeoutMillis(timeoutMillis);
 		outbox.collect(message);
-
 	}
 	
 	@Override
@@ -47,11 +54,13 @@ public class MasterRpcMessageHandler extends RpcMessageHandler {
 	public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
 		super.channelRead(ctx, msg);
 		RpcMessage m = (RpcMessage) msg;
+		LOG.debug("Master channel read: rpcMessage=" + m);
 		if(m.getType() == MessageType.WORKER_REGISTRATION.getCode()) {
 			JSONObject body = JSONObject.parseObject(m.getBody());
 			String workerId = body.getString(JsonKeys.WORKER_ID);
 			Channel channel = workerIdToChannel.get(workerId);
 			if(channel == null) {
+				channel = ctx.channel();
 				workerIdToChannel.putIfAbsent(workerId, channel);
 				channelToWorkerId.putIfAbsent(channel, workerId);
 			} else {
@@ -65,6 +74,7 @@ public class MasterRpcMessageHandler extends RpcMessageHandler {
 		// route message to inbox
 		InboxMessage message = new InboxMessage();
 		String from = channelToWorkerId.get(ctx.channel());
+		LOG.debug("Master channel read: workerId=" + from + ", channel=" + ctx.channel());
 		message.setRpcMessage(m);
 		message.setFromEndpointId(from);
 		message.setToEndpointId(null);

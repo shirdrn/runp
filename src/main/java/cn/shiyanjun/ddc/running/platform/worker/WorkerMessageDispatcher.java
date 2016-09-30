@@ -3,7 +3,9 @@ package cn.shiyanjun.ddc.running.platform.worker;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.logging.Log;
@@ -15,6 +17,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
 
 import cn.shiyanjun.ddc.api.Context;
+import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
 import cn.shiyanjun.ddc.network.common.AbstractMessageDispatcher;
 import cn.shiyanjun.ddc.network.common.LocalMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
@@ -74,7 +77,6 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		super.start();
 		
 		// try to register to master
-		final long timeout = 3000L;
 		while(true) {
 			registerToMaster();
 			try {
@@ -82,32 +84,47 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 					registrationLock.wait();
 				}
 				LOG.info("Worker registration succeeded.");
+				break;
 			} catch (InterruptedException e) {
-				LOG.warn("Worker registration timeout: timeout=" + timeout);
+				LOG.warn("Worker registration interrupet.");
 			}
 		}
 		
 		// send heartbeat to master periodically
-//		scheduledExecutorService = Executors.newScheduledThreadPool(1, new NamedThreadFactory("HEARTBEAT"));
-//		scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-//			@Override
-//			public void run() {
-//				RpcMessage hb = new RpcMessage(idGen.incrementAndGet(), MessageType.HEART_BEAT.getCode());
-//				JSONObject body = new JSONObject();
-//				body.put(JsonKeys.WORKER_ID, workerId);
-//				body.put(JsonKeys.WORKER_HOST, workerHost);
-//				hb.setBody(body.toJSONString());
-//				hb.setTimestamp(System.currentTimeMillis());
-//				heartbeatReporter.addMessage(hb);
-//				LOG.info("Heartbeart prepared: id=" + hb.getId() + ", body=" + hb.getBody());
-//			}
-//		}, 3000, heartbeatIntervalMillis, TimeUnit.MILLISECONDS);
+		scheduledExecutorService = Executors.newScheduledThreadPool(1, new NamedThreadFactory("HEARTBEAT"));
+		scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
+			@Override
+			public void run() {
+				LocalMessage message = prepareHeartbeatMessage();
+				heartbeatReporter.addMessage(message);
+				LOG.info("Heartbeart prepared: id=" + message.getRpcMessage().getId() + ", body=" + message.getRpcMessage().getBody());
+			}
+			
+			private LocalMessage prepareHeartbeatMessage() {
+				RpcMessage hb = new RpcMessage(idGen.incrementAndGet(), MessageType.HEART_BEAT.getCode());
+				hb.setNeedReply(false);
+				JSONObject body = new JSONObject();
+				body.put(JsonKeys.WORKER_ID, workerId);
+				body.put(JsonKeys.WORKER_HOST, workerHost);
+				hb.setBody(body.toJSONString());
+				hb.setTimestamp(System.currentTimeMillis());
+				
+				LocalMessage message = new LocalMessage();
+				message.setRpcMessage(hb);
+				message.setFromEndpointId(workerId);
+				message.setToEndpointId(masterId);
+				return message;
+			}
+			
+		}, 3000, heartbeatIntervalMillis, TimeUnit.MILLISECONDS);
 	}
 	
 	private void registerToMaster() {
 		RpcMessage rpcMessage = new RpcMessage();
 		rpcMessage.setId(System.currentTimeMillis());
 		rpcMessage.setType(MessageType.WORKER_REGISTRATION.getCode());
+		rpcMessage.setNeedReply(true);
+		
 		JSONObject body = new JSONObject(true);
 		body.put(JsonKeys.WORKER_ID, workerId);
 		body.put(JsonKeys.WORKER_HOST, workerHost);
@@ -160,6 +177,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 							if(Status.SUCCEES.toString().equals(status)) {
 								masterId = repliedAck.getString(JsonKeys.MASTER_ID);
 								registrationLock.notify();
+								LOG.debug("Notify dispatcher registration succeeded.");
 								LOG.info("Worker registered: id=" + m.getId() + ", type=" + m.getType() + ", body=" + m.getBody());
 							} else {
 								LOG.info("Worker registration failed: id=" + m.getId() + ", type=" + m.getType() + ", body=" + m.getBody());
@@ -216,10 +234,25 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 
 		@Override
 		public void handle(LocalMessage message) {
-			send(message);
-			LOG.debug("Heartbeart sent: message=" + message);
-			if(message.getRpcMessage().getTimestamp() == MessageType.WORKER_REGISTRATION.getCode()) {
-				LOG.info("Registration message sent: message=" + message);
+			RpcMessage m = message.getRpcMessage();
+			try {
+				Optional<MessageType> messageType = MessageType.fromCode(m.getType());
+				if(messageType.isPresent()) {
+					switch(messageType.get()) {
+						case WORKER_REGISTRATION:
+							ask(message);
+							LOG.info("Registration message sent: message=" + m);
+							break;
+						case HEART_BEAT:
+							send(message);
+							LOG.debug("Heartbeart sent: message=" + m);
+							break;
+						default:
+							LOG.warn("Unknown received message: messageType=" + messageType);
+					}
+				}
+			} catch (Exception e) {
+				LOG.warn("Fail to handle received message: rpcMessage=" + m, e);
 			}
 		}
 

@@ -95,8 +95,8 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 
 		private void replyRegistration(String workerId, final RpcMessage m, Status status, String reason) {
 			if(m.isNeedReply()) {
-				RpcMessage reply = new RpcMessage(m.getId());
-				reply.setType(MessageType.ACK_WORKER_REGISTRATION.getCode());
+				LOG.debug("Registration reply prepareing: receivedMessage=" + m);
+				RpcMessage reply = new RpcMessage(m.getId(), MessageType.ACK_WORKER_REGISTRATION.getCode());
 				reply.setTimestamp(Time.now());
 				JSONObject answer = new JSONObject(true);
 				answer.put(JsonKeys.MASTER_ID, masterId);
@@ -108,6 +108,7 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 				ack.setFromEndpointId(masterId);
 				ack.setToEndpointId(workerId);
 				send(ack);
+				LOG.info("Registration replied: reliedMessage=" + reply);
 			}
 		}
 		
@@ -141,6 +142,7 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 				workers.putIfAbsent(workerId, info);
 			}
 			info.setLastContatTime(System.currentTimeMillis());
+			LOG.info("Worker last contact: " + m);
 		}
 
 	}
