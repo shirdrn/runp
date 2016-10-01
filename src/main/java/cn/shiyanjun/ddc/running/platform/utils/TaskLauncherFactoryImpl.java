@@ -4,7 +4,7 @@ import cn.shiyanjun.ddc.api.Context;
 import cn.shiyanjun.ddc.api.JobPlugin;
 import cn.shiyanjun.ddc.api.common.AbstractObjectFactory;
 import cn.shiyanjun.ddc.api.utils.ReflectionUtils;
-import cn.shiyanjun.ddc.running.platform.common.TaskLauncher;
+import cn.shiyanjun.ddc.running.platform.api.TaskLauncher;
 
 public class TaskLauncherFactoryImpl extends AbstractObjectFactory<TaskLauncher>{
 

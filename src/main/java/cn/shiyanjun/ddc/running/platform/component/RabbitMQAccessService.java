@@ -1,4 +1,4 @@
-package cn.shiyanjun.ddc.running.platform.common;
+package cn.shiyanjun.ddc.running.platform.component;
 
 import java.io.IOException;
 import java.util.HashSet;
@@ -11,6 +11,9 @@ import org.apache.commons.logging.LogFactory;
 
 import com.rabbitmq.client.ConnectionFactory;
 import com.rabbitmq.client.Consumer;
+
+import cn.shiyanjun.ddc.running.platform.api.RunnableConsumer;
+import cn.shiyanjun.ddc.running.platform.common.AbstractMQAccessService;
 
 public class RabbitMQAccessService extends AbstractMQAccessService {
 

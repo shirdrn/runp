@@ -1,4 +1,4 @@
-package cn.shiyanjun.ddc.running.platform.common;
+package cn.shiyanjun.ddc.running.platform.api;
 
 import com.rabbitmq.client.Consumer;
 

@@ -1,6 +1,7 @@
 package cn.shiyanjun.ddc.running.platform.common;
 
 import cn.shiyanjun.ddc.api.Task;
+import cn.shiyanjun.ddc.running.platform.api.Monitorable;
 
 public class RunningTask implements Monitorable {
 

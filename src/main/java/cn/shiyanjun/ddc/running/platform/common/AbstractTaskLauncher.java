@@ -23,6 +23,7 @@ import cn.shiyanjun.ddc.api.TaskResult;
 import cn.shiyanjun.ddc.api.common.AbstractComponent;
 import cn.shiyanjun.ddc.api.constants.TaskStatus;
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
+import cn.shiyanjun.ddc.running.platform.api.TaskLauncher;
 
 public abstract class AbstractTaskLauncher extends AbstractComponent implements TaskLauncher {
 

@@ -16,16 +16,17 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
 
-import cn.shiyanjun.ddc.api.Context;
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
 import cn.shiyanjun.ddc.network.common.AbstractMessageDispatcher;
-import cn.shiyanjun.ddc.network.common.LocalMessage;
+import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
+import cn.shiyanjun.ddc.running.platform.common.RunpContext;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import cn.shiyanjun.ddc.running.platform.constants.Status;
+import cn.shiyanjun.ddc.running.platform.utils.Time;
 
 public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 
@@ -34,23 +35,27 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	private final TaskProgressReporter taskProgressReporter;
 	private final RemoteMessageReceiver remoteMessageReceiver;
 	private final AtomicLong idGen = new AtomicLong();
-	private String masterId;
+	private final RunpContext context;
 	private final String workerId;
+	private volatile String masterId;
 	private final String workerHost;
 	private final int heartbeatIntervalMillis;
 	private final Map<String, Integer> resourceTypes = Maps.newHashMap();
-	private final BlockingQueue<LocalMessage> taskWaitingQueue = Queues.newLinkedBlockingQueue();
+	private final BlockingQueue<PeerMessage> taskWaitingQueue = Queues.newLinkedBlockingQueue();
 	private final Object registrationLock = new Object();
 	private ScheduledExecutorService scheduledExecutorService;
 	
-	public WorkerMessageDispatcher(Context context) {
-		super(context);
-		workerId = context.get(RunpConfigKeys.WORKER_ID);
-		workerHost = context.get(RunpConfigKeys.WORKER_HOST);
-		heartbeatIntervalMillis = context.getInt(RunpConfigKeys.WORKER_HEARTBEAT_INTERVALMILLIS, 60000);
+	public WorkerMessageDispatcher(RunpContext context) {
+		super(context.getContext());
+		this.context = context;
+		masterId = context.getMasterId();
+		workerId = context.getThisPeerId();
+		workerHost = context.getContext().get(RunpConfigKeys.WORKER_HOST);
+		heartbeatIntervalMillis = context.getContext().getInt(RunpConfigKeys.WORKER_HEARTBEAT_INTERVALMILLIS, 60000);
 		
-		String[] types = context.getStringArray(RunpConfigKeys.RESOURCE_TYPES, null);
+		String[] types = context.getContext().getStringArray(RunpConfigKeys.RESOURCE_TYPES, null);
 		Preconditions.checkArgument(types != null, "Configured resource types shouldn't be null");
+		
 		for(String t : types) {
 			String[] type = t.split(":");
 			String typeCode = type[0];
@@ -95,24 +100,25 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 			@Override
 			public void run() {
-				LocalMessage message = prepareHeartbeatMessage();
+				PeerMessage message = prepareHeartbeatMessage();
 				heartbeatReporter.addMessage(message);
 				LOG.info("Heartbeart prepared: id=" + message.getRpcMessage().getId() + ", body=" + message.getRpcMessage().getBody());
 			}
 			
-			private LocalMessage prepareHeartbeatMessage() {
+			private PeerMessage prepareHeartbeatMessage() {
 				RpcMessage hb = new RpcMessage(idGen.incrementAndGet(), MessageType.HEART_BEAT.getCode());
 				hb.setNeedReply(false);
 				JSONObject body = new JSONObject();
 				body.put(JsonKeys.WORKER_ID, workerId);
 				body.put(JsonKeys.WORKER_HOST, workerHost);
 				hb.setBody(body.toJSONString());
-				hb.setTimestamp(System.currentTimeMillis());
+				hb.setTimestamp(Time.now());
 				
-				LocalMessage message = new LocalMessage();
+				PeerMessage message = new PeerMessage();
 				message.setRpcMessage(hb);
 				message.setFromEndpointId(workerId);
 				message.setToEndpointId(masterId);
+				message.setChannel(context.getChannel(masterId));
 				return message;
 			}
 			
@@ -121,7 +127,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	
 	private void registerToMaster() {
 		RpcMessage rpcMessage = new RpcMessage();
-		rpcMessage.setId(System.currentTimeMillis());
+		rpcMessage.setId(idGen.incrementAndGet());
 		rpcMessage.setType(MessageType.WORKER_REGISTRATION.getCode());
 		rpcMessage.setNeedReply(true);
 		
@@ -132,29 +138,30 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		types.putAll(resourceTypes);
 		body.put(JsonKeys.RESOURCE_TYPES, types);
 		rpcMessage.setBody(body.toJSONString());
-		rpcMessage.setTimestamp(System.currentTimeMillis());
+		rpcMessage.setTimestamp(Time.now());
 		
-		LocalMessage m = new LocalMessage();
+		PeerMessage m = new PeerMessage();
 		m.setFromEndpointId(workerId);
 		m.setToEndpointId(masterId);
 		m.setRpcMessage(rpcMessage);
+		m.setChannel(context.getChannel(masterId));
 		heartbeatReporter.addMessage(m);
 	}
 	
-	final class RegistrationSender extends RunnableMessageListener<LocalMessage> {
+	final class RegistrationSender extends RunnableMessageListener<PeerMessage> {
 
 		public RegistrationSender(int messageType) {
 			super(messageType);
 		}
 
 		@Override
-		public void handle(LocalMessage message) {
-			ask(message);
+		public void handle(PeerMessage message) {
+			getRpcService().ask(message);
 		}
 
 	}
 	
-	final class RemoteMessageReceiver extends RunnableMessageListener<LocalMessage> {
+	final class RemoteMessageReceiver extends RunnableMessageListener<PeerMessage> {
 		
 		
 		public RemoteMessageReceiver(int... messageType) {
@@ -162,7 +169,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		}
 
 		@Override
-		public void handle(LocalMessage message) {
+		public void handle(PeerMessage message) {
 			RpcMessage m = message.getRpcMessage();
 			Optional<MessageType> messageType = MessageType.fromCode(m.getType());
 			if(messageType.isPresent()) {
@@ -198,15 +205,15 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	 * 
 	 * @author yanjun
 	 */
-	final class TaskProgressReporter extends RunnableMessageListener<LocalMessage> {
+	final class TaskProgressReporter extends RunnableMessageListener<PeerMessage> {
 		
 		public TaskProgressReporter(int messageType) {
 			super(messageType);
 		}
 
 		@Override
-		public void handle(LocalMessage message) {
-			send(message);
+		public void handle(PeerMessage message) {
+			getRpcService().send(message);
 		}
 
 	}
@@ -216,7 +223,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	 * 
 	 * @author yanjun
 	 */
-	final class HeartbeatReporter extends RunnableMessageListener<LocalMessage> {
+	final class HeartbeatReporter extends RunnableMessageListener<PeerMessage> {
 		
 		public HeartbeatReporter(int... messageType) {
 			super(messageType);
@@ -233,18 +240,18 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		}
 
 		@Override
-		public void handle(LocalMessage message) {
+		public void handle(PeerMessage message) {
 			RpcMessage m = message.getRpcMessage();
 			try {
 				Optional<MessageType> messageType = MessageType.fromCode(m.getType());
 				if(messageType.isPresent()) {
 					switch(messageType.get()) {
 						case WORKER_REGISTRATION:
-							ask(message);
+							getRpcService().ask(message);
 							LOG.info("Registration message sent: message=" + m);
 							break;
 						case HEART_BEAT:
-							send(message);
+							getRpcService().send(message);
 							LOG.debug("Heartbeart sent: message=" + m);
 							break;
 						default:
