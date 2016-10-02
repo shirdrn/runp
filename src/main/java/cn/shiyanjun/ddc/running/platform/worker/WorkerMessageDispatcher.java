@@ -21,12 +21,13 @@ import cn.shiyanjun.ddc.network.common.AbstractMessageDispatcher;
 import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
-import cn.shiyanjun.ddc.running.platform.common.RunpContext;
+import cn.shiyanjun.ddc.running.platform.common.WorkerContext;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import cn.shiyanjun.ddc.running.platform.constants.Status;
 import cn.shiyanjun.ddc.running.platform.utils.Time;
+import cn.shiyanjun.ddc.running.platform.utils.Utils;
 
 public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 
@@ -35,25 +36,25 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	private final TaskProgressReporter taskProgressReporter;
 	private final RemoteMessageReceiver remoteMessageReceiver;
 	private final AtomicLong idGen = new AtomicLong();
-	private final RunpContext context;
+	private final WorkerContext workerContext;
 	private final String workerId;
 	private volatile String masterId;
 	private final String workerHost;
 	private final int heartbeatIntervalMillis;
 	private final Map<String, Integer> resourceTypes = Maps.newHashMap();
-	private final BlockingQueue<PeerMessage> taskWaitingQueue = Queues.newLinkedBlockingQueue();
+	private final BlockingQueue<PeerMessage> waitingTasksQueue = Queues.newLinkedBlockingQueue();
 	private final Object registrationLock = new Object();
 	private ScheduledExecutorService scheduledExecutorService;
 	
-	public WorkerMessageDispatcher(RunpContext context) {
-		super(context.getContext());
-		this.context = context;
-		masterId = context.getMasterId();
-		workerId = context.getThisPeerId();
-		workerHost = context.getContext().get(RunpConfigKeys.WORKER_HOST);
-		heartbeatIntervalMillis = context.getContext().getInt(RunpConfigKeys.WORKER_HEARTBEAT_INTERVALMILLIS, 60000);
+	public WorkerMessageDispatcher(WorkerContext workerContext) {
+		super(workerContext.getContext());
+		this.workerContext = workerContext;
+		masterId = workerContext.getMasterId();
+		workerId = workerContext.getThisPeerId();
+		workerHost = workerContext.getContext().get(RunpConfigKeys.WORKER_HOST);
+		heartbeatIntervalMillis = workerContext.getContext().getInt(RunpConfigKeys.WORKER_HEARTBEAT_INTERVALMILLIS, 60000);
 		
-		String[] types = context.getContext().getStringArray(RunpConfigKeys.RESOURCE_TYPES, null);
+		String[] types = workerContext.getContext().getStringArray(RunpConfigKeys.RESOURCE_TYPES, null);
 		Preconditions.checkArgument(types != null, "Configured resource types shouldn't be null");
 		
 		for(String t : types) {
@@ -65,12 +66,12 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		}
 		
 		heartbeatReporter = new HeartbeatReporter(
-				MessageType.WORKER_REGISTRATION.getCode(), 
-				MessageType.HEART_BEAT.getCode());
-		taskProgressReporter = new TaskProgressReporter(MessageType.TASK_PROGRESS.getCode());
+				MessageType.WORKER_REGISTRATION, 
+				MessageType.HEART_BEAT);
+		taskProgressReporter = new TaskProgressReporter(MessageType.TASK_PROGRESS);
 		remoteMessageReceiver = new RemoteMessageReceiver(
-				MessageType.TASK_ASSIGNMENT.getCode(), 
-				MessageType.ACK_WORKER_REGISTRATION.getCode());
+				MessageType.TASK_ASSIGNMENT, 
+				MessageType.ACK_WORKER_REGISTRATION);
 		
 		register(taskProgressReporter);
 		register(heartbeatReporter);
@@ -82,18 +83,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		super.start();
 		
 		// try to register to master
-		while(true) {
-			registerToMaster();
-			try {
-				synchronized(registrationLock) {
-					registrationLock.wait();
-				}
-				LOG.info("Worker registration succeeded.");
-				break;
-			} catch (InterruptedException e) {
-				LOG.warn("Worker registration interrupet.");
-			}
-		}
+		registerToMaster();
 		
 		// send heartbeat to master periodically
 		scheduledExecutorService = Executors.newScheduledThreadPool(1, new NamedThreadFactory("HEARTBEAT"));
@@ -118,7 +108,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 				message.setRpcMessage(hb);
 				message.setFromEndpointId(workerId);
 				message.setToEndpointId(masterId);
-				message.setChannel(context.getChannel(masterId));
+				message.setChannel(workerContext.getChannel(masterId));
 				return message;
 			}
 			
@@ -126,26 +116,38 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	}
 	
 	private void registerToMaster() {
-		RpcMessage rpcMessage = new RpcMessage();
-		rpcMessage.setId(idGen.incrementAndGet());
-		rpcMessage.setType(MessageType.WORKER_REGISTRATION.getCode());
-		rpcMessage.setNeedReply(true);
-		
-		JSONObject body = new JSONObject(true);
-		body.put(JsonKeys.WORKER_ID, workerId);
-		body.put(JsonKeys.WORKER_HOST, workerHost);
-		JSONObject types = new JSONObject(true);
-		types.putAll(resourceTypes);
-		body.put(JsonKeys.RESOURCE_TYPES, types);
-		rpcMessage.setBody(body.toJSONString());
-		rpcMessage.setTimestamp(Time.now());
-		
-		PeerMessage m = new PeerMessage();
-		m.setFromEndpointId(workerId);
-		m.setToEndpointId(masterId);
-		m.setRpcMessage(rpcMessage);
-		m.setChannel(context.getChannel(masterId));
-		heartbeatReporter.addMessage(m);
+		while(true) {
+			try {
+				RpcMessage rpcMessage = new RpcMessage();
+				rpcMessage.setId(idGen.incrementAndGet());
+				rpcMessage.setType(MessageType.WORKER_REGISTRATION.getCode());
+				rpcMessage.setNeedReply(true);
+				
+				JSONObject body = new JSONObject(true);
+				body.put(JsonKeys.WORKER_ID, workerId);
+				body.put(JsonKeys.WORKER_HOST, workerHost);
+				JSONObject types = new JSONObject(true);
+				types.putAll(resourceTypes);
+				body.put(JsonKeys.RESOURCE_TYPES, types);
+				rpcMessage.setBody(body.toJSONString());
+				rpcMessage.setTimestamp(Time.now());
+				
+				PeerMessage m = new PeerMessage();
+				m.setFromEndpointId(workerId);
+				m.setToEndpointId(masterId);
+				m.setRpcMessage(rpcMessage);
+				m.setChannel(workerContext.getChannel(masterId));
+				heartbeatReporter.addMessage(m);
+				
+				synchronized(registrationLock) {
+					registrationLock.wait();
+				}
+				LOG.info("Worker registration succeeded.");
+				break;
+			} catch (InterruptedException e) {
+				LOG.warn("Worker registration interrupet.");
+			}
+		}
 	}
 	
 	final class RegistrationSender extends RunnableMessageListener<PeerMessage> {
@@ -164,18 +166,19 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	final class RemoteMessageReceiver extends RunnableMessageListener<PeerMessage> {
 		
 		
-		public RemoteMessageReceiver(int... messageType) {
-			super(messageType);
+		public RemoteMessageReceiver(MessageType... messageTypes) {
+			super(Utils.toIntegerArray(messageTypes));
 		}
 
 		@Override
 		public void handle(PeerMessage message) {
-			RpcMessage m = message.getRpcMessage();
-			Optional<MessageType> messageType = MessageType.fromCode(m.getType());
+			RpcMessage rpcMessage = message.getRpcMessage();
+			Optional<MessageType> messageType = MessageType.fromCode(rpcMessage.getType());
 			if(messageType.isPresent()) {
 				switch(messageType.get()) {
 					case TASK_ASSIGNMENT:
-						taskWaitingQueue.add(message);
+						waitingTasksQueue.add(message);
+						LOG.info("Assigned task received: message=" + rpcMessage);
 						break;
 					case ACK_WORKER_REGISTRATION:
 						synchronized(registrationLock) {
@@ -185,9 +188,11 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 								masterId = repliedAck.getString(JsonKeys.MASTER_ID);
 								registrationLock.notify();
 								LOG.debug("Notify dispatcher registration succeeded.");
-								LOG.info("Worker registered: id=" + m.getId() + ", type=" + m.getType() + ", body=" + m.getBody());
+								LOG.info("Worker registered: id=" + rpcMessage.getId() + ", type=" + rpcMessage.getType() + ", body=" + rpcMessage.getBody());
 							} else {
-								LOG.info("Worker registration failed: id=" + m.getId() + ", type=" + m.getType() + ", body=" + m.getBody());
+								registrationLock.notify();
+								LOG.debug("Notify dispatcher registration succeeded.");
+								LOG.info("Worker registration failed: id=" + rpcMessage.getId() + ", type=" + rpcMessage.getType() + ", body=" + rpcMessage.getBody());
 								// register to master again
 								registerToMaster();
 							}
@@ -207,8 +212,8 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	 */
 	final class TaskProgressReporter extends RunnableMessageListener<PeerMessage> {
 		
-		public TaskProgressReporter(int messageType) {
-			super(messageType);
+		public TaskProgressReporter(MessageType messageType) {
+			super(messageType.getCode());
 		}
 
 		@Override
@@ -225,9 +230,10 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 	 */
 	final class HeartbeatReporter extends RunnableMessageListener<PeerMessage> {
 		
-		public HeartbeatReporter(int... messageType) {
-			super(messageType);
+		public HeartbeatReporter(MessageType... messageTypes) {
+			super(Utils.toIntegerArray(messageTypes));
 		}
+		
 		
 		@Override
 		public void start() {

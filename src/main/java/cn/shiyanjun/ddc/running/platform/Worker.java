@@ -20,7 +20,7 @@ import cn.shiyanjun.ddc.network.NettyRpcClient;
 import cn.shiyanjun.ddc.network.common.MessageDispatcher;
 import cn.shiyanjun.ddc.network.common.NettyRpcEndpoint;
 import cn.shiyanjun.ddc.network.common.RpcService;
-import cn.shiyanjun.ddc.running.platform.common.RunpContext;
+import cn.shiyanjun.ddc.running.platform.common.WorkerContext;
 import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import cn.shiyanjun.ddc.running.platform.worker.WorkerChannelHandler;
 import cn.shiyanjun.ddc.running.platform.worker.WorkerMessageDispatcher;
@@ -37,25 +37,25 @@ public class Worker extends AbstractComponent implements LifecycleAware {
 	private final String workerHost;
 	private final RpcService rpcService;
 	
-	public Worker(RunpContext context) {
-		super(context.getContext());
-		workerId = context.getContext().get(RunpConfigKeys.WORKER_ID);
-		workerHost = context.getContext().get(RunpConfigKeys.WORKER_HOST);
+	public Worker(WorkerContext workerContext) {
+		super(workerContext.getContext());
+		workerId = workerContext.getContext().get(RunpConfigKeys.WORKER_ID);
+		workerHost = workerContext.getContext().get(RunpConfigKeys.WORKER_HOST);
 		Preconditions.checkArgument(workerId != null);
 		Preconditions.checkArgument(workerHost != null);
-		context.setThisPeerId(workerId);
+		workerContext.setThisPeerId(workerId);
 		
-		dispatcher = new WorkerMessageDispatcher(context);
-		context.setMessageDispatcher(dispatcher);
-		rpcService = new WorkerRpcService(context);
+		dispatcher = new WorkerMessageDispatcher(workerContext);
+		workerContext.setMessageDispatcher(dispatcher);
+		rpcService = new WorkerRpcService(workerContext);
 		dispatcher.setRpcService(rpcService);
-		context.setRpcService(rpcService);
+		workerContext.setRpcService(rpcService);
 		
 		
 		List<Pair<Class<? extends ChannelHandler>, Object[]>> handlerInfos = Lists.newArrayList();
-		handlerInfos.add(new Pair<Class<? extends ChannelHandler>, Object[]>(WorkerChannelHandler.class, new Object[] {context.getContext(), dispatcher}));
+		handlerInfos.add(new Pair<Class<? extends ChannelHandler>, Object[]>(WorkerChannelHandler.class, new Object[] {workerContext.getContext(), dispatcher}));
 		endpoint = NettyRpcEndpoint.newEndpoint(
-				context.getContext(), 
+				workerContext.getContext(), 
 				NettyRpcClient.class, 
 				handlerInfos);
 	}
@@ -89,9 +89,9 @@ public class Worker extends AbstractComponent implements LifecycleAware {
 	}
 	
 	public static void main(String[] args) {
-		final RunpContext context = new RunpContext();
-		context.setContext(new ContextImpl());
-		Worker worker = new Worker(context);
+		final WorkerContext workerContext = new WorkerContext();
+		workerContext.setContext(new ContextImpl());
+		Worker worker = new Worker(workerContext);
 		worker.start();		
 	}
 

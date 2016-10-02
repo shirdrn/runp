@@ -1,11 +1,11 @@
 package cn.shiyanjun.ddc.running.platform.api;
 
+import java.util.Optional;
+
 import cn.shiyanjun.ddc.api.constants.TaskType;
-import cn.shiyanjun.ddc.network.common.MessageDispatcher;
-import cn.shiyanjun.ddc.running.platform.common.ScheduledTask;
+import cn.shiyanjun.ddc.running.platform.common.WorkOrder;
 
 public interface TaskScheduler {
 
-	void setMessageDispatcher(MessageDispatcher messageDispatcher);
-	ScheduledTask schedule(TaskType taskType);
+	Optional<WorkOrder> schedule(TaskType taskType);
 }

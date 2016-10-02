@@ -7,19 +7,17 @@ import com.google.common.collect.Maps;
 import cn.shiyanjun.ddc.api.Context;
 import cn.shiyanjun.ddc.network.common.MessageDispatcher;
 import cn.shiyanjun.ddc.network.common.RpcService;
-import cn.shiyanjun.ddc.running.platform.api.TaskScheduler;
 import io.netty.channel.Channel;
 
 public class RunpContext {
 
-	private String masterId = "Master";
-	private String thisPeerId;
-	private final ConcurrentMap<String, Channel> peerIdToChannel = Maps.newConcurrentMap();
-	private final ConcurrentMap<Channel, String> channelToPeerId = Maps.newConcurrentMap();
-	private Context  context;
-	private MessageDispatcher messageDispatcher;
-	private RpcService rpcService;
-	private TaskScheduler taskScheduler;
+	protected String masterId = "Master";
+	protected String thisPeerId;
+	protected final ConcurrentMap<String, Channel> peerIdToChannel = Maps.newConcurrentMap();
+	protected final ConcurrentMap<Channel, String> channelToPeerId = Maps.newConcurrentMap();
+	protected Context  context;
+	protected MessageDispatcher messageDispatcher;
+	protected RpcService rpcService;
 	
 	public Channel getChannel(String peerId) {
 		return peerIdToChannel.get(peerId);
@@ -56,14 +54,6 @@ public class RunpContext {
 
 	public void setRpcService(RpcService rpcService) {
 		this.rpcService = rpcService;
-	}
-
-	public TaskScheduler getTaskScheduler() {
-		return taskScheduler;
-	}
-
-	public void setTaskScheduler(TaskScheduler taskScheduler) {
-		this.taskScheduler = taskScheduler;
 	}
 
 	public String getThisPeerId() {

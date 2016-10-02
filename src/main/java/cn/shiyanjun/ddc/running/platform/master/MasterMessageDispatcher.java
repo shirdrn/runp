@@ -1,19 +1,20 @@
 package cn.shiyanjun.ddc.running.platform.master;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Optional;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONObject;
-import com.google.common.collect.Maps;
 
+import cn.shiyanjun.ddc.api.constants.TaskType;
 import cn.shiyanjun.ddc.network.common.AbstractMessageDispatcher;
 import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
-import cn.shiyanjun.ddc.running.platform.common.RunpContext;
+import cn.shiyanjun.ddc.running.platform.common.MasterContext;
 import cn.shiyanjun.ddc.running.platform.common.WorkerInfo;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
@@ -23,16 +24,13 @@ import cn.shiyanjun.ddc.running.platform.utils.Time;
 public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 
 	private static final Log LOG = LogFactory.getLog(MasterMessageDispatcher.class);
-	private final ConcurrentMap<String, WorkerInfo> workers = Maps.newConcurrentMap();
-	private final ConcurrentMap<String, Map<String, ResourceData>> resources = Maps.newConcurrentMap();
-	private final RunpContext context;
+	private final MasterContext masterContext;
 	
-	public MasterMessageDispatcher(RunpContext context) {
-		super(context.getContext());
-		this.context = context;
-		register(new WorkerRegistrationReceiver(MessageType.WORKER_REGISTRATION.getCode()));
-		register(new HeartbeatReceiver(MessageType.HEART_BEAT.getCode()));
-		register(new TaskProgressReceiver(MessageType.TASK_PROGRESS.getCode()));
+	public MasterMessageDispatcher(MasterContext masterContext) {
+		super(masterContext.getContext());
+		this.masterContext = masterContext;
+		register(new WorkerRegistrationReceiver(MessageType.WORKER_REGISTRATION));
+		register(new HeartbeatReceiver(MessageType.HEART_BEAT));
 	}
 	
 	@Override
@@ -42,54 +40,46 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 	
 	final class WorkerRegistrationReceiver extends RunnableMessageListener<PeerMessage> {
 
-		public WorkerRegistrationReceiver(int messageType) {
-			super(messageType);
+		public WorkerRegistrationReceiver(MessageType messageType) {
+			super(messageType.getCode());
 		}
 
 		@Override
 		public void handle(PeerMessage message) {
-			final RpcMessage m = message.getRpcMessage();
-			assert m.getType() == MessageType.WORKER_REGISTRATION.getCode();
-			LOG.info("Worker registration received: " + m);
+			final RpcMessage rpcMessage = message.getRpcMessage();
+			assert rpcMessage.getType() == MessageType.WORKER_REGISTRATION.getCode();
+			LOG.info("Worker registration received: " + rpcMessage);
 			
-			JSONObject body = JSONObject.parseObject(m.getBody());
+			JSONObject body = JSONObject.parseObject(rpcMessage.getBody());
 			String workerId = body.getString(JsonKeys.WORKER_ID);
 			String workerHost = body.getString(JsonKeys.WORKER_HOST);
-			WorkerInfo workerInfo = workers.get(workerId);
+			WorkerInfo workerInfo = masterContext.getWorker(workerId);
 			if(workerInfo == null) {
 				// keep worker information in memory
 				workerInfo = new WorkerInfo();
 				workerInfo.setId(workerId);
 				workerInfo.setHost(workerHost);
 				workerInfo.setChannel(message.getChannel());
-				workers.putIfAbsent(workerId, workerInfo);
+				masterContext.updateWorker(workerId, workerInfo);
 				
 				// keep worker resource statuses in memory
 				JSONObject resourceTypes = body.getJSONObject(JsonKeys.RESOURCE_TYPES);
-				Map<String, ResourceData> rds = resources.get(workerId);
-				if(rds == null) {
-					rds = Maps.newHashMap();
-				}
 				for(String type : resourceTypes.keySet()) {
-					int capacity = resourceTypes.getIntValue(type);
-					ResourceData newResource = new ResourceData(type, capacity);
-					ResourceData oldResource = rds.putIfAbsent(type, newResource);
-					if(oldResource != null) {
-						if(resources.equals(oldResource)) {
-							LOG.warn("Resources already registered: wokerId=" + workerId + ", " + newResource);
-						} else {
-							// update resource statuses
-							LOG.info("Resources updated: oldResource=" + oldResource + ", newResource=" + newResource);
-						}
+					Optional<TaskType> taskType = TaskType.fromCode(Integer.parseInt(type));
+					if(taskType.isPresent()) {
+						int capacity = resourceTypes.getIntValue(type);
+						ResourceData newResource = new ResourceData(taskType.get(), capacity);
+						masterContext.updateResource(workerId, newResource);
+						
 					}
 				}
 				LOG.info("New worker registered: workerId=" + workerId + ", resources=" + resourceTypes);
 				
 				// reply an successful ack message
-				replyRegistration(workerId, m, Status.SUCCEES, "Worker registration succeeded.");
+				replyRegistration(workerId, rpcMessage, Status.SUCCEES, "Worker registration succeeded.");
 			} else {
 				// reply an failed ack message
-				replyRegistration(workerId, m, Status.FAILURE, "Worker already registered.");
+				replyRegistration(workerId, rpcMessage, Status.FAILURE, "Worker already registered.");
 			}
 		}
 
@@ -99,13 +89,13 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 				RpcMessage reply = new RpcMessage(m.getId(), MessageType.ACK_WORKER_REGISTRATION.getCode());
 				reply.setTimestamp(Time.now());
 				JSONObject answer = new JSONObject(true);
-				answer.put(JsonKeys.MASTER_ID, context.getThisPeerId());
+				answer.put(JsonKeys.MASTER_ID, masterContext.getThisPeerId());
 				answer.put(JsonKeys.STATUS, status);
 				answer.put(JsonKeys.REASON, reason);
 				reply.setBody(answer.toJSONString());
 				PeerMessage ack = new PeerMessage();
 				ack.setRpcMessage(reply);
-				ack.setFromEndpointId(context.getThisPeerId());
+				ack.setFromEndpointId(masterContext.getThisPeerId());
 				ack.setToEndpointId(workerId);
 				getRpcService().send(ack);
 				LOG.info("Registration replied: reliedMessage=" + reply);
@@ -121,80 +111,96 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 	 */
 	final class HeartbeatReceiver extends RunnableMessageListener<PeerMessage> {
 		
-		public HeartbeatReceiver(int messageType) {
-			super(messageType);
+		public HeartbeatReceiver(MessageType messageType) {
+			super(messageType.getCode());
 		}
 
 		@Override
 		public void handle(PeerMessage message) {
-			final RpcMessage m = message.getRpcMessage();
-			assert MessageType.HEART_BEAT.getCode() == m.getType();
-			LOG.info("Heartbeat received: " + m);
+			final RpcMessage rpcMessage = message.getRpcMessage();
+			assert MessageType.HEART_BEAT.getCode() == rpcMessage.getType();
+			LOG.info("Heartbeat received: " + rpcMessage);
 			
-			JSONObject body = JSONObject.parseObject(m.getBody());
+			JSONObject body = JSONObject.parseObject(rpcMessage.getBody());
 			String workerId = body.getString(JsonKeys.WORKER_ID);
 			String host = body.getString(JsonKeys.WORKER_HOST);
-			WorkerInfo info = workers.get(workerId);
-			if(info == null) {
-				info = new WorkerInfo();
-				info.setId(workerId);
-				info.setHost(host);
-				workers.putIfAbsent(workerId, info);
+			WorkerInfo workerInfo = masterContext.getWorker(workerId);
+			if(workerInfo == null) {
+				workerInfo = new WorkerInfo();
+				workerInfo.setId(workerId);
+				workerInfo.setHost(host);
+				masterContext.updateWorker(workerId, workerInfo);
 			}
-			info.setLastContatTime(System.currentTimeMillis());
-			LOG.info("Worker last contact: " + m);
+			workerInfo.setLastContactTime(Time.now());
+			LOG.info("Worker last contact: " + rpcMessage);
 		}
 
 	}
 	
-	/**
-	 * Receive and handle task progress messages from <code>Worker</code>.
-	 * 
-	 * @author yanjun
-	 */
-	final class TaskProgressReceiver extends RunnableMessageListener<PeerMessage> {
+	public static class ResourceData {
 		
-		public TaskProgressReceiver(int messageType) {
-			super(messageType);
-		}
-
-		@Override
-		public void handle(PeerMessage message) {
-			LOG.info("Task progress received: " + message);
-		}
-
-	}
-	
-	class ResourceData {
-		
-		final String type;
+		final TaskType taskType;
 		final int capacity;
 		volatile int freeCount;
 		String description;
+		final Lock lock = new ReentrantLock();
 		
-		public ResourceData(String type, int capacity) {
+		public ResourceData(TaskType type, int capacity) {
 			super();
-			this.type = type;
+			this.taskType = type;
 			this.capacity = capacity;
+			this.freeCount = capacity;
+		}
+		
+		public Lock getLock() {
+			return lock;
 		}
 		
 		@Override
 		public int hashCode() {
-			return 31 * type.hashCode() + 31 * capacity;
+			return 31 * taskType.hashCode() + 31 * capacity;
 		}
 		
 		@Override
 		public boolean equals(Object obj) {
 			ResourceData other = (ResourceData) obj;
-			return type.equals(other.type) && capacity == other.capacity;
+			return taskType.equals(other.taskType) && capacity == other.capacity;
 		}
 		
 		@Override
 		public String toString() {
 			JSONObject data = new JSONObject(true);
-			data.put("type", type);
+			data.put("type", taskType);
 			data.put("capacity", capacity);
 			return data.toJSONString();
+		}
+
+		public int getFreeCount() {
+			return freeCount;
+		}
+
+		public void incrementFreeCount() {
+			this.freeCount++;
+		}
+		
+		public void decrementFreeCount() {
+			this.freeCount--;
+		}
+
+		public String getDescription() {
+			return description;
+		}
+
+		public void setDescription(String description) {
+			this.description = description;
+		}
+
+		public TaskType getTaskType() {
+			return taskType;
+		}
+
+		public int getCapacity() {
+			return capacity;
 		}
 	}
 	

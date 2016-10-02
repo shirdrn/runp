@@ -9,4 +9,6 @@ public interface JsonKeys {
 	String STATUS = "status";
 	String REASON = "reason";
 	
+	String TASK_TYPE = "taskType";
+	String TASK_STATUS = "taskStatus";
 }

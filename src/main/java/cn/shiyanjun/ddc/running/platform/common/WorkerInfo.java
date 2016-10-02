@@ -7,7 +7,7 @@ public class WorkerInfo {
 	private String id;
 	private String host;
 	private volatile Channel channel;
-	private long lastContatTime;
+	private long lastContactTime;
 	
 	public String getId() {
 		return id;
@@ -28,10 +28,10 @@ public class WorkerInfo {
 		this.channel = channel;
 	}
 	public long getLastContatTime() {
-		return lastContatTime;
+		return lastContactTime;
 	}
-	public void setLastContatTime(long lastContatTime) {
-		this.lastContatTime = lastContatTime;
+	public void setLastContactTime(long lastContactTime) {
+		this.lastContactTime = lastContactTime;
 	}
 
 }
