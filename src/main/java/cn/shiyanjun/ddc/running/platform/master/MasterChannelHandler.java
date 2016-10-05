@@ -15,7 +15,7 @@ public class MasterChannelHandler extends AbstractChannelHandler {
 	public MasterChannelHandler(Context context, MessageDispatcher messageDispatcher) {
 		super(context, messageDispatcher);
 	}
-
+	
 	@Override
 	public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
 		super.channelRegistered(ctx);

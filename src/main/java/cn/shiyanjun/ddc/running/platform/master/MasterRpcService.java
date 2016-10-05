@@ -6,11 +6,11 @@ import org.apache.commons.logging.LogFactory;
 import com.alibaba.fastjson.JSONObject;
 
 import cn.shiyanjun.ddc.network.common.InboxMessage;
-import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.OutboxMessage;
+import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RpcService;
-import cn.shiyanjun.ddc.running.platform.common.RunpContext;
+import cn.shiyanjun.ddc.running.platform.common.MasterContext;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import io.netty.channel.Channel;
@@ -18,9 +18,9 @@ import io.netty.channel.Channel;
 public class MasterRpcService extends RpcService {
 
 	private static final Log LOG = LogFactory.getLog(MasterRpcService.class);
-	private final RunpContext context;
+	private final MasterContext context;
 	
-	public MasterRpcService(RunpContext context) {
+	public MasterRpcService(MasterContext context) {
 		super(context.getContext(), context.getMessageDispatcher());
 		this.context = context;
 	}
@@ -68,6 +68,15 @@ public class MasterRpcService extends RpcService {
 			inboxMessage.setChannel(channel);
 			inbox.collect(inboxMessage);		
 		}
+	}
+
+	@Override
+	public void receive(Channel channel, Throwable cause) {
+		String workerId = context.getPeerId(channel);
+		context.remove(workerId, channel);	
+		context.removeResource(workerId);
+		LOG.warn("Channel closed: " + channel, cause);
+		LOG.info("Purge registered worker with resources: workerId=" + workerId + ", channel=" + channel);
 	}
 
 }

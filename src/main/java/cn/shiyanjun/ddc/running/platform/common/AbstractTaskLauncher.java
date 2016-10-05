@@ -3,7 +3,6 @@ package cn.shiyanjun.ddc.running.platform.common;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -17,22 +16,26 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.google.common.collect.Maps;
+
 import cn.shiyanjun.ddc.api.Context;
 import cn.shiyanjun.ddc.api.Task;
 import cn.shiyanjun.ddc.api.TaskResult;
 import cn.shiyanjun.ddc.api.common.AbstractComponent;
 import cn.shiyanjun.ddc.api.constants.TaskStatus;
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
+import cn.shiyanjun.ddc.running.platform.api.Monitorable;
 import cn.shiyanjun.ddc.running.platform.api.TaskLauncher;
+import cn.shiyanjun.ddc.running.platform.utils.Time;
 
 public abstract class AbstractTaskLauncher extends AbstractComponent implements TaskLauncher {
 
 	private static final Log LOG = LogFactory.getLog(AbstractTaskLauncher.class);
 	private int type;
-	private final ConcurrentMap<Integer, RunningTask> waitingTasks = new ConcurrentHashMap<>();
-	private final ConcurrentMap<Integer, RunningTask> runningTasks = new ConcurrentHashMap<>();
-	private final ConcurrentMap<Integer, RunningTask> completedTasks = new ConcurrentHashMap<>();
-	private final ConcurrentMap<Integer, Future<TaskResult>> taskResultFutures = new ConcurrentHashMap<>();
+	private final ConcurrentMap<Integer, RunningTask> waitingTasks = Maps.newConcurrentMap();
+	private final ConcurrentMap<Integer, RunningTask> runningTasks = Maps.newConcurrentMap();
+	private final ConcurrentMap<Integer, RunningTask> completedTasks = Maps.newConcurrentMap();
+	private final ConcurrentMap<Integer, Future<TaskResult>> taskResultFutures = Maps.newConcurrentMap();
 	private ExecutorService taskExecutorService;
 	private ExecutorService workerExecutorService;
 	private final Lock lock = new ReentrantLock();
@@ -79,7 +82,7 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 			task = createTask(taskId);
 			if(runningTasks.size() >= maxConcurrentRunningTaskCount) {
 				rTask.setTask(task);
-				long now = System.currentTimeMillis();
+				long now = Time.now();
 				rTask.setStartTime(now);
 				rTask.updateLastActiveTime(now);
 				waitingTasks.putIfAbsent(taskId, rTask);
@@ -195,7 +198,7 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 									scheduleNextTask();
 								}
 							} catch (Exception e) {
-								LOG.error("Fail to fetch task result: taskId=" + taskId);
+								LOG.error("Fail to fetch task result: taskId=" + taskId, e);
 								doTaskFailure(taskId, e);
 								iter.remove();
 								scheduleNextTask();
@@ -220,7 +223,7 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 
 		private void doTaskFailure(int taskId, Exception cause) {
 			RunningTask rTask = runningTasks.remove(taskId);
-			long doneTime = System.currentTimeMillis();
+			long doneTime = Time.now();
 			rTask.updateLastActiveTime(doneTime);
 			rTask.setDoneTime(doneTime);
 			rTask.getTask().setStatus(TaskStatus.FAILED);
@@ -230,7 +233,7 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 
 		private void doTaskCompletion(int taskId, TaskResult taskResult) {
 			RunningTask rTask = runningTasks.remove(taskId);
-			long doneTime = System.currentTimeMillis();
+			long doneTime = Time.now();
 			rTask.updateLastActiveTime(doneTime);
 			rTask.setDoneTime(doneTime);
 			if(taskResult != null) {
@@ -248,7 +251,7 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 			} catch (TimeoutException e) {
 				if(runningTasks.containsKey(taskId)) {
 					RunningTask rTask = runningTasks.get(taskId);
-					rTask.updateLastActiveTime(System.currentTimeMillis());
+					rTask.updateLastActiveTime(Time.now());
 				} else {
 					LOG.fatal("Task summitted, but not in running task queue: taskId=" + taskId);
 				}
@@ -260,6 +263,61 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 				doTaskCompletion(taskId, result);
 			}
 			return false;
+		}
+	}
+	
+	class RunningTask implements Monitorable {
+
+		private Task task;
+		private long startTime;
+		private long doneTime;
+		private long lastActiveTime;
+		private Exception cause;
+
+		@Override
+		public void setStartTime(long startTime) {
+			this.startTime = startTime;		
+		}
+
+		@Override
+		public long getStartTime() {
+			return startTime;
+		}
+
+		@Override
+		public void setDoneTime(long doneTime) {
+			this.doneTime = doneTime;
+		}
+
+		@Override
+		public long getDoneTime() {
+			return doneTime;
+		}
+
+		@Override
+		public void updateLastActiveTime(long lastActiveTime) {
+			this.lastActiveTime = lastActiveTime;		
+		}
+
+		@Override
+		public long getLastActiveTime() {
+			return lastActiveTime;
+		}
+
+		public Task getTask() {
+			return task;
+		}
+
+		public void setTask(Task task) {
+			this.task = task;
+		}
+
+		public Exception getCause() {
+			return cause;
+		}
+
+		public void setCause(Exception cause) {
+			this.cause = cause;
 		}
 	}
 

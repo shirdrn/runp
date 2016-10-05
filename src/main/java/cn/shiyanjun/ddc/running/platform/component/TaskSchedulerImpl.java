@@ -13,6 +13,7 @@ import cn.shiyanjun.ddc.api.constants.TaskType;
 import cn.shiyanjun.ddc.running.platform.api.TaskScheduler;
 import cn.shiyanjun.ddc.running.platform.common.MasterContext;
 import cn.shiyanjun.ddc.running.platform.common.WorkOrder;
+import cn.shiyanjun.ddc.running.platform.common.WorkerInfo;
 import cn.shiyanjun.ddc.running.platform.master.MasterMessageDispatcher.ResourceData;
 
 public class TaskSchedulerImpl extends AbstractComponent implements TaskScheduler {
@@ -27,31 +28,31 @@ public class TaskSchedulerImpl extends AbstractComponent implements TaskSchedule
 	}
 
 	@Override
-	public Optional<WorkOrder> schedule(TaskType taskType) {
+	public Optional<WorkOrder> resourceOffser(TaskType taskType) {
 		Optional<WorkOrder> scheduledTask = Optional.empty();
-		List<String> workers = masterContext.getAvailableWorkers(taskType);
-		LOG.debug("Available workers: " + workers);
+		List<String> availableWorkers = masterContext.getAvailableWorkers(taskType);
+		LOG.debug("Available workers: " + availableWorkers);
 		
-		Collections.shuffle(workers);
-		for(String workerId : workers) {
-			ResourceData rd = masterContext.getResource(workerId, taskType);
-			LOG.debug("Check resource data: workerId=" + workerId + ", resource=" + rd);
-			try {
-				if(rd.getLock().tryLock(3000, TimeUnit.MILLISECONDS) && rd.getFreeCount() > 0) {
-					rd.decrementFreeCount();
-					final WorkOrder wo = new WorkOrder();
-					wo.setTargetWorkerId(workerId);
-					wo.setWorkerInfo(masterContext.getWorker(workerId));;
-					scheduledTask = Optional.of(wo);
-					break;
-				} else {
-					continue;
-				}
-			} catch(InterruptedException e) {
-				e.printStackTrace();
-			} finally {
-				rd.getLock().unlock();
-			}
+		if(!availableWorkers.isEmpty()) {
+			Collections.shuffle(availableWorkers);
+			scheduledTask = availableWorkers.stream().findFirst().<WorkOrder>map(workerId -> {
+				Optional<ResourceData> result = masterContext.getResource(workerId, taskType);
+				WorkOrder wo = new WorkOrder();
+				result.ifPresent(rd -> {
+					try {
+						if(rd.getLock().tryLock(3000, TimeUnit.MILLISECONDS) && rd.getFreeCount()>0) {
+							rd.decrementFreeCount();
+							wo.setTargetWorkerId(workerId);
+							Optional<WorkerInfo> wi = masterContext.getWorker(workerId);
+							wo.setWorkerInfo(wi.get());
+						}
+					} catch(InterruptedException e) {
+					} finally {
+						rd.getLock().unlock();
+					}
+				});
+				return wo;
+			});
 		}
 		return scheduledTask;
 	}

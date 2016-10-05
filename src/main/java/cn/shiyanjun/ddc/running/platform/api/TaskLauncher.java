@@ -1,6 +1,7 @@
 package cn.shiyanjun.ddc.running.platform.api;
 
 import cn.shiyanjun.ddc.api.LifecycleAware;
+import cn.shiyanjun.ddc.api.Task;
 import cn.shiyanjun.ddc.api.common.Typeable;
 
 /**

@@ -63,6 +63,7 @@ import io.netty.channel.ChannelHandler;
 public class Master extends AbstractComponent implements LifecycleAware {
 
 	private static final Log LOG = LogFactory.getLog(Master.class);
+	private final MasterContext masterContext;
 	private final String id;
 	private NettyRpcEndpoint endpoint;
 	private final MessageDispatcher dispatcher;
@@ -82,6 +83,7 @@ public class Master extends AbstractComponent implements LifecycleAware {
 	
 	public Master(MasterContext masterContext) {
 		super(masterContext.getContext());
+		this.masterContext = masterContext;
 		id = masterContext.getContext().get(RunpConfigKeys.MASTER_ID, masterContext.getMasterId());
 		masterContext.setMasterId(id);
 		masterContext.setThisPeerId(id);
@@ -95,14 +97,10 @@ public class Master extends AbstractComponent implements LifecycleAware {
 		taskScheduler = new TaskSchedulerImpl(masterContext);
 		masterContext.setTaskScheduler(taskScheduler);
 		
-		List<Pair<Class<? extends ChannelHandler>, Object[]>> handlerInfos = Lists.newArrayList();
-		handlerInfos.add(new Pair<Class<? extends ChannelHandler>, Object[]>(MasterChannelHandler.class, new Object[] {masterContext.getContext(), dispatcher}));
-		endpoint = NettyRpcEndpoint.newEndpoint(
-				masterContext.getContext(), 
-				NettyRpcServer.class, 
-				handlerInfos);
+		// create RPC endpoint
+		createRpcEndpoint();
 		
-		taskAssignmentProcessor = new TaskAssignmentProcessor(MessageType.TASK_ASSIGNMENT.getCode());
+		taskAssignmentProcessor = new TaskAssignmentProcessor(MessageType.TASK_ASSIGNMENT);
 		
 		ResourceUtils.registerResource(rabbitmqConfig, ConnectionFactory.class);
 		final ConnectionFactory connectionFactory = ResourceUtils.getResource(ConnectionFactory.class);
@@ -111,7 +109,18 @@ public class Master extends AbstractComponent implements LifecycleAware {
 		taskRequestMQAccessService = new RabbitMQAccessService(taskRequestQName, connectionFactory);
 		taskResultMQAccessService = new RabbitMQAccessService(taskResultQName, connectionFactory);
 		idGenerator = new AtomicLong(Time.now());
-		dispatcher.register(new TaskProgressReceiver(MessageType.TASK_PROGRESS.getCode()));
+		dispatcher.register(new TaskProgressReceiver(MessageType.TASK_PROGRESS));
+	}
+
+	private void createRpcEndpoint() {
+		List<Pair<Class<? extends ChannelHandler>, Object[]>> handlerInfos = Lists.newArrayList();
+		handlerInfos.add(new Pair<Class<? extends ChannelHandler>, Object[]>(
+				MasterChannelHandler.class, 
+				new Object[] {masterContext.getContext(), dispatcher}));
+		endpoint = NettyRpcEndpoint.newEndpoint(
+				masterContext.getContext(), 
+				NettyRpcServer.class, 
+				handlerInfos);
 	}
 	
 	@Override
@@ -119,17 +128,7 @@ public class Master extends AbstractComponent implements LifecycleAware {
 		try {
 			rpcService.start();
 			executorService = Executors.newCachedThreadPool(new NamedThreadFactory("MASTER"));
-			executorService.execute(new Runnable() {
-
-				@Override
-				public void run() {
-					LOG.info("Starting server endpoint...");
-					endpoint.start();					
-					LOG.info("Server started.");
-				}
-				
-			});
-			Thread.sleep(1000);
+			endpoint.start();					
 			
 			LOG.info("Starting master dispatcher...");
 			dispatcher.register(taskAssignmentProcessor);
@@ -141,12 +140,13 @@ public class Master extends AbstractComponent implements LifecycleAware {
 	
 			executorService.execute(new TaskRequestMQMessageConsumer(taskRequestMQAccessService.getQueueName(), taskRequestMQAccessService.getChannel()));
 			executorService.execute(new SchedulingThread());
-			executorService.execute(new MockedMQProducer());
+//			executorService.execute(new MockedMQProducer());
+			endpoint.await();
 		} catch (Exception e) {
 			Throwables.propagate(e);
 		}
 	}
-
+	
 	@Override
 	public void stop() {
 		taskRequestMQAccessService.stop();
@@ -157,8 +157,8 @@ public class Master extends AbstractComponent implements LifecycleAware {
 	
 	final class TaskAssignmentProcessor extends RunnableMessageListener<PeerMessage> {
 
-		public TaskAssignmentProcessor(int messageType) {
-			super(messageType);
+		public TaskAssignmentProcessor(MessageType messageType) {
+			super(messageType.getCode());
 		}
 		
 		@Override
@@ -177,7 +177,7 @@ public class Master extends AbstractComponent implements LifecycleAware {
 				try {
 					// take from waitingTasks queue
 					WaitingTask task = waitingTasks.takeFirst();
-					Optional<WorkOrder> workOrder = taskScheduler.schedule(task.taskType);
+					Optional<WorkOrder> workOrder = taskScheduler.resourceOffser(task.taskType);
 					if(workOrder.isPresent()) {
 						PendingAssignedTask assigningTask = new PendingAssignedTask(task, workOrder.get().getTargetWorkerId());
 						
@@ -196,9 +196,8 @@ public class Master extends AbstractComponent implements LifecycleAware {
 						LOG.info("Task scheduled: " + rpcMessage);
 					} else {
 						waitingTasks.putLast(task);
-						LOG.debug("Resource insufficient: taskType=" + task.taskType);
+						LOG.info("Resource insufficient, push back to waiting queue: taskType=" + task.taskType);
 					}
-					Thread.sleep(500);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
@@ -220,8 +219,7 @@ public class Master extends AbstractComponent implements LifecycleAware {
 		}
 		
 		@Override
-		public void handleDelivery(String consumerTag, Envelope envelope, BasicProperties properties, byte[] body)
-				throws IOException {
+		public void handleDelivery(String consumerTag, Envelope envelope, BasicProperties properties, byte[] body) throws IOException {
 			if(body != null) {
 				try {
 					// resolve the returned message
@@ -251,6 +249,7 @@ public class Master extends AbstractComponent implements LifecycleAware {
 				try {
 					JSONObject message = new JSONObject(true);
 					message.put(JsonKeys.TASK_TYPE, TaskType.GREEN_PLUM.getCode());
+					message.put(JsonKeys.TASK_TYPE_DESC, TaskType.GREEN_PLUM);
 					taskRequestMQAccessService.produceMessage(message.toJSONString());
 					LOG.info("Message published: " + message);
 					Thread.sleep(10000);
@@ -270,8 +269,8 @@ public class Master extends AbstractComponent implements LifecycleAware {
 	 */
 	final class TaskProgressReceiver extends RunnableMessageListener<PeerMessage> {
 		
-		public TaskProgressReceiver(int messageType) {
-			super(messageType);
+		public TaskProgressReceiver(MessageType messageType) {
+			super(messageType.getCode());
 		}
 
 		@Override
@@ -289,17 +288,18 @@ public class Master extends AbstractComponent implements LifecycleAware {
 						rTask.get().latUpdateTs = Time.now();
 					} else {
 						Optional<PendingAssignedTask> pTask = getPendingAssignedTask(id);
-						assert pTask.isPresent();
-						try {
-							pTask.get().channel.basicAck(pTask.get().deliveryTag, false);
-							pendingAssignedTasks.remove(pTask.get());
-							RunningTask runningTask = new RunningTask(pTask.get());
-							runningTask.latUpdateTs = Time.now();
-							runningTasks.add(runningTask);
-							LOG.info("Task assigned, running now: id=" + rpcMessage.getId() + ", body=" + rpcMessage.getBody());
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
+						pTask.ifPresent(task -> {
+							try {
+								pTask.get().channel.basicAck(pTask.get().deliveryTag, false);
+								pendingAssignedTasks.remove(pTask.get());
+								RunningTask runningTask = new RunningTask(pTask.get());
+								runningTask.latUpdateTs = Time.now();
+								runningTasks.add(runningTask);
+								LOG.info("Task assigned, running now: id=" + rpcMessage.getId() + ", body=" + rpcMessage.getBody());
+							} catch (IOException e) {
+								e.printStackTrace();
+							}
+						});
 					}
 					break;
 					

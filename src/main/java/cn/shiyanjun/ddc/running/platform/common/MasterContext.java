@@ -2,6 +2,7 @@ package cn.shiyanjun.ddc.running.platform.common;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentMap;
 
 import org.apache.commons.logging.Log;
@@ -21,8 +22,8 @@ public final class MasterContext extends RunpContext {
 	private final ConcurrentMap<String, Map<TaskType, ResourceData>> resources = Maps.newConcurrentMap();
 	private TaskScheduler taskScheduler;
 	
-	public WorkerInfo getWorker(String workerId) {
-		return workers.get(workerId);
+	public Optional<WorkerInfo> getWorker(String workerId) {
+		return Optional.ofNullable(workers.get(workerId));
 	}
 	
 	public synchronized void updateWorker(String workerId, WorkerInfo workerInfo) {
@@ -41,7 +42,7 @@ public final class MasterContext extends RunpContext {
 		return availableWorkers;
 	}
 	
-	public ResourceData getResource(String workerId, TaskType taskType) {
+	public Optional<ResourceData> getResource(String workerId, TaskType taskType) {
 		ResourceData rd = null;
 		Map<TaskType, ResourceData> resource = resources.get(workerId);
 		if(resource != null) {
@@ -49,7 +50,12 @@ public final class MasterContext extends RunpContext {
 		} else {
 			LOG.warn("Resource not found: workerId=" + workerId);
 		}
-		return rd;
+		return Optional.ofNullable(rd);
+	}
+	
+	public void removeResource(String workerId) {
+		resources.remove(workerId);
+		workers.remove(workerId);
 	}
 	
 	public void updateResource(String workerId, ResourceData resource) {

@@ -27,6 +27,11 @@ public class RunpContext {
 		return channelToPeerId.get(channel);
 	}
 	
+	public void remove(String peerId, Channel channel) {
+		peerIdToChannel.remove(peerId, channel);
+		channelToPeerId.remove(channel, peerId);
+	}
+	
 	public void update(String peerId, Channel channel) {
 		peerIdToChannel.put(peerId, channel);
 		channelToPeerId.put(channel, peerId);

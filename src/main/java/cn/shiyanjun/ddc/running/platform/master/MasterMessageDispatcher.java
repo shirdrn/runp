@@ -7,6 +7,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
 import cn.shiyanjun.ddc.api.constants.TaskType;
@@ -53,26 +54,25 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 			JSONObject body = JSONObject.parseObject(rpcMessage.getBody());
 			String workerId = body.getString(JsonKeys.WORKER_ID);
 			String workerHost = body.getString(JsonKeys.WORKER_HOST);
-			WorkerInfo workerInfo = masterContext.getWorker(workerId);
-			if(workerInfo == null) {
+			Optional<WorkerInfo> result = masterContext.getWorker(workerId);
+			if(!result.isPresent()) {
 				// keep worker information in memory
-				workerInfo = new WorkerInfo();
+				WorkerInfo workerInfo = new WorkerInfo();
 				workerInfo.setId(workerId);
 				workerInfo.setHost(workerHost);
 				workerInfo.setChannel(message.getChannel());
 				masterContext.updateWorker(workerId, workerInfo);
 				
 				// keep worker resource statuses in memory
-				JSONObject resourceTypes = body.getJSONObject(JsonKeys.RESOURCE_TYPES);
-				for(String type : resourceTypes.keySet()) {
-					Optional<TaskType> taskType = TaskType.fromCode(Integer.parseInt(type));
-					if(taskType.isPresent()) {
-						int capacity = resourceTypes.getIntValue(type);
-						ResourceData newResource = new ResourceData(taskType.get(), capacity);
-						masterContext.updateResource(workerId, newResource);
-						
-					}
-				}
+				JSONArray resourceTypes = body.getJSONArray(JsonKeys.RESOURCE_TYPES);
+				resourceTypes.stream().forEach(o -> {
+					JSONObject r = (JSONObject) o;
+					String taskTypeDesc = r.getString(JsonKeys.TASK_TYPE_DESC);
+					int capacity = r.getIntValue(JsonKeys.CAPACITY);
+					TaskType taskType = TaskType.valueOf(taskTypeDesc);
+					ResourceData newResource = new ResourceData(taskType, capacity);
+					masterContext.updateResource(workerId, newResource);
+				});
 				LOG.info("New worker registered: workerId=" + workerId + ", resources=" + resourceTypes);
 				
 				// reply an successful ack message
@@ -119,19 +119,19 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 		public void handle(PeerMessage message) {
 			final RpcMessage rpcMessage = message.getRpcMessage();
 			assert MessageType.HEART_BEAT.getCode() == rpcMessage.getType();
-			LOG.info("Heartbeat received: " + rpcMessage);
+			LOG.debug("Heartbeat received: " + rpcMessage);
 			
 			JSONObject body = JSONObject.parseObject(rpcMessage.getBody());
 			String workerId = body.getString(JsonKeys.WORKER_ID);
 			String host = body.getString(JsonKeys.WORKER_HOST);
-			WorkerInfo workerInfo = masterContext.getWorker(workerId);
-			if(workerInfo == null) {
-				workerInfo = new WorkerInfo();
+			Optional<WorkerInfo> result = masterContext.getWorker(workerId);
+			if(!result.isPresent()) {
+				WorkerInfo workerInfo = new WorkerInfo();
 				workerInfo.setId(workerId);
 				workerInfo.setHost(host);
 				masterContext.updateWorker(workerId, workerInfo);
 			}
-			workerInfo.setLastContactTime(Time.now());
+			result.get().setLastContactTime(Time.now());
 			LOG.info("Worker last contact: " + rpcMessage);
 		}
 
@@ -139,6 +139,7 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 	
 	public static class ResourceData {
 		
+		final int taskTypeCode;
 		final TaskType taskType;
 		final int capacity;
 		volatile int freeCount;
@@ -147,6 +148,7 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 		
 		public ResourceData(TaskType type, int capacity) {
 			super();
+			this.taskTypeCode = type.getCode();
 			this.taskType = type;
 			this.capacity = capacity;
 			this.freeCount = capacity;
@@ -170,8 +172,9 @@ public class MasterMessageDispatcher extends AbstractMessageDispatcher {
 		@Override
 		public String toString() {
 			JSONObject data = new JSONObject(true);
-			data.put("type", taskType);
-			data.put("capacity", capacity);
+			data.put(JsonKeys.TASK_TYPE_CODE, taskTypeCode);
+			data.put(JsonKeys.TASK_TYPE_DESC, taskType);
+			data.put(JsonKeys.CAPACITY, capacity);
 			return data.toJSONString();
 		}
 

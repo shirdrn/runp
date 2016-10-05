@@ -10,5 +10,9 @@ public interface JsonKeys {
 	String REASON = "reason";
 	
 	String TASK_TYPE = "taskType";
+	String TASK_TYPE_CODE = "taskTypeCode";
+	String TASK_TYPE_DESC = "taskTypeDesc";
+	String CAPACITY = "capacity";
 	String TASK_STATUS = "taskStatus";
+	String TASK_STATUS_DESC = "taskStatusDesc";
 }

@@ -9,7 +9,7 @@ import cn.shiyanjun.ddc.network.common.RpcMessage;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 
-public class AbstractChannelHandler extends ChannelInboundHandlerAdapter {
+public abstract class AbstractChannelHandler extends ChannelInboundHandlerAdapter {
 
 	private static final Log LOG = LogFactory.getLog(AbstractChannelHandler.class);
 	protected final Context context;
@@ -22,9 +22,16 @@ public class AbstractChannelHandler extends ChannelInboundHandlerAdapter {
 	}
 	
 	@Override
+	public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+		super.exceptionCaught(ctx, cause);
+		ctx.channel().close();
+		messageDispatcher.getRpcService().receive(ctx.channel(), cause);
+	}
+	
+	@Override
 	public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
 		super.channelRegistered(ctx);
-		messageDispatcher.getRpcService().receive(ctx.channel(), null);
+		messageDispatcher.getRpcService().receive(ctx.channel(), (RpcMessage) null);
 	}
 	
 	@Override

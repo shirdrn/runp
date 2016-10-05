@@ -7,5 +7,5 @@ import cn.shiyanjun.ddc.running.platform.common.WorkOrder;
 
 public interface TaskScheduler {
 
-	Optional<WorkOrder> schedule(TaskType taskType);
+	Optional<WorkOrder> resourceOffser(TaskType taskType);
 }
