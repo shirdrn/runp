@@ -10,7 +10,6 @@ import cn.shiyanjun.ddc.network.common.OutboxMessage;
 import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RpcService;
-import cn.shiyanjun.ddc.running.platform.common.MasterContext;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import io.netty.channel.Channel;
@@ -27,25 +26,25 @@ public class MasterRpcService extends RpcService {
 	
 	@Override
 	protected void sendToRemotePeer(PeerMessage request, boolean needRelpy, int timeoutMillis) {
-		RpcMessage m = request.getRpcMessage();
+		RpcMessage rpcMessage = request.getRpcMessage();
 		String to = request.getToEndpointId();
 		Channel channel = context.getChannel(to);
 		LOG.debug("Send to worker: workerChannel=" + channel);
-		LOG.debug("Send to worker: rpcMessage=" + m);
+		LOG.debug("Send to worker: rpcMessage=" + rpcMessage);
 		
-		OutboxMessage message = new OutboxMessage();
-		message.setRpcMessage(m);
-		message.setChannel(channel);
-		message.setTimeoutMillis(timeoutMillis);
-		outbox.collect(message);
+		OutboxMessage outboxMessage = new OutboxMessage();
+		outboxMessage.setRpcMessage(rpcMessage);
+		outboxMessage.setChannel(channel);
+		outboxMessage.setTimeoutMillis(timeoutMillis);
+		outbox.collect(outboxMessage);
 	}
 
 	@Override
-	public void receive(Channel channel, RpcMessage mmessage) {
-		LOG.debug("Master channel read: rpcMessage=" + mmessage);
-		if(mmessage != null) {
-			if(mmessage.getType() == MessageType.WORKER_REGISTRATION.getCode()) {
-				JSONObject body = JSONObject.parseObject(mmessage.getBody());
+	public void receive(Channel channel, RpcMessage rpcMessage) {
+		LOG.debug("Master channel read: rpcMessage=" + rpcMessage);
+		if(rpcMessage != null) {
+			if(rpcMessage.getType() == MessageType.WORKER_REGISTRATION.getCode()) {
+				JSONObject body = JSONObject.parseObject(rpcMessage.getBody());
 				String workerId = body.getString(JsonKeys.WORKER_ID);
 				Channel ch = context.getChannel(workerId);
 				if(ch == null) {
@@ -62,9 +61,9 @@ public class MasterRpcService extends RpcService {
 			InboxMessage inboxMessage = new InboxMessage();
 			String from = context.getPeerId(channel);
 			LOG.debug("Master channel read: workerId=" + from + ", channel=" + channel);
-			inboxMessage.setRpcMessage(mmessage);
+			inboxMessage.setRpcMessage(rpcMessage);
 			inboxMessage.setFromEndpointId(from);
-			inboxMessage.setToEndpointId(context.getThisPeerId());
+			inboxMessage.setToEndpointId(context.getPeerId());
 			inboxMessage.setChannel(channel);
 			inbox.collect(inboxMessage);		
 		}

@@ -1,4 +1,4 @@
-package cn.shiyanjun.ddc.running.platform.common;
+package cn.shiyanjun.ddc.running.platform.master;
 
 import java.util.List;
 import java.util.Map;
@@ -8,12 +8,14 @@ import java.util.concurrent.ConcurrentMap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
+import cn.shiyanjun.ddc.api.Context;
 import cn.shiyanjun.ddc.api.constants.TaskType;
 import cn.shiyanjun.ddc.running.platform.api.TaskScheduler;
-import cn.shiyanjun.ddc.running.platform.master.MasterMessageDispatcher.ResourceData;
+import cn.shiyanjun.ddc.running.platform.common.RunpContext;
 
 public final class MasterContext extends RunpContext {
 
@@ -22,12 +24,34 @@ public final class MasterContext extends RunpContext {
 	private final ConcurrentMap<String, Map<TaskType, ResourceData>> resources = Maps.newConcurrentMap();
 	private TaskScheduler taskScheduler;
 	
+	public MasterContext(Context context) {
+		super(context);
+		peerId = getMasterId();
+		Preconditions.checkArgument(peerId != null);
+	}
+	
 	public Optional<WorkerInfo> getWorker(String workerId) {
 		return Optional.ofNullable(workers.get(workerId));
 	}
 	
 	public synchronized void updateWorker(String workerId, WorkerInfo workerInfo) {
 		workers.putIfAbsent(workerId, workerInfo);
+	}
+	
+	public synchronized void releaseResource(String workerId, TaskType taskType) {
+		Map<TaskType, ResourceData> rdMap = resources.get(workerId);
+		if(rdMap != null) {
+			ResourceData rd = rdMap.get(taskType);
+			if(rd != null) {
+				try {
+					if(rd.getLock().tryLock()) {
+						rd.incrementFreeCount();
+					}
+				} finally {
+					rd.getLock().unlock();
+				}
+			}
+		}
 	}
 	
 	public List<String> getAvailableWorkers(TaskType taskType) {
@@ -58,7 +82,7 @@ public final class MasterContext extends RunpContext {
 		workers.remove(workerId);
 	}
 	
-	public void updateResource(String workerId, ResourceData resource) {
+	public synchronized void updateResource(String workerId, ResourceData resource) {
 		Map<TaskType, ResourceData> rds = resources.get(workerId);
 		if(rds == null) {
 			rds = Maps.newHashMap();

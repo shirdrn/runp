@@ -1,4 +1,4 @@
-package cn.shiyanjun.ddc.running.platform.common;
+package cn.shiyanjun.ddc.running.platform.master;
 
 import io.netty.channel.Channel;
 

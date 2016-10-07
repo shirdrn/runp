@@ -8,12 +8,11 @@ import org.apache.commons.logging.LogFactory;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
-import cn.shiyanjun.ddc.network.common.MessageDispatcher;
+import cn.shiyanjun.ddc.network.api.MessageDispatcher;
 import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
 import cn.shiyanjun.ddc.running.platform.common.AbstractConnectionManager;
-import cn.shiyanjun.ddc.running.platform.common.WorkerContext;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import cn.shiyanjun.ddc.running.platform.utils.Time;
@@ -27,21 +26,15 @@ public class ClientConnectionManager extends AbstractConnectionManager {
 	private final Object registrationLock = new Object();
 	
 	public ClientConnectionManager(WorkerContext workerContext, AtomicLong idGen, MessageDispatcher dispatcher) {
-		super(workerContext.getContext());
+		super(workerContext);
 		this.workerContext = workerContext;
-		this.messageDispatcher = dispatcher;
 		this.heartbeatReporter = dispatcher.getMessageListener(MessageType.HEART_BEAT.getCode());
 		messageIdGenerator = idGen;
 	}
 	
-	@Override
-	public void recoverState() {
-		
-	}
-	
 	public void registerToMaster() {
 		while(true) {
-			String workerId = workerContext.getThisPeerId();
+			String workerId = workerContext.getPeerId();
 			try {
 				RpcMessage rpcMessage = new RpcMessage();
 				rpcMessage.setId(messageIdGenerator.incrementAndGet());
@@ -74,7 +67,6 @@ public class ClientConnectionManager extends AbstractConnectionManager {
 				synchronized(registrationLock) {
 					registrationLock.wait();
 				}
-				LOG.info("Worker registration succeeded.");
 				break;
 			} catch (InterruptedException e) {
 				LOG.warn("Worker registration interrupted.");
@@ -82,13 +74,13 @@ public class ClientConnectionManager extends AbstractConnectionManager {
 		}
 	}
 	
-	public void notifyRegistered() {
+	public void notifyRegistrationSucceeded() {
 		synchronized(registrationLock) {
 			registrationLock.notify();
 		}
 	}
 	
-	public void notifyUnregistered() {
+	public void notifyRegistrationFailed() {
 		synchronized(registrationLock) {
 			registrationLock.notify();
 		}

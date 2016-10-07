@@ -10,7 +10,7 @@ import com.rabbitmq.client.DefaultConsumer;
 
 import cn.shiyanjun.ddc.running.platform.api.RunnableConsumer;
 
-public class AbstractRunnableConsumer extends DefaultConsumer implements RunnableConsumer {
+public abstract class AbstractRunnableConsumer extends DefaultConsumer implements RunnableConsumer {
 
 	private static final Log LOG = LogFactory.getLog(AbstractRunnableConsumer.class);
 	private final String queueName;
@@ -37,7 +37,7 @@ public class AbstractRunnableConsumer extends DefaultConsumer implements Runnabl
 	
 	@Override
 	public boolean equals(Object obj) {
-		RunnableConsumer other = (RunnableConsumer) obj;
+		AbstractRunnableConsumer other = (AbstractRunnableConsumer) obj;
 		return this.hashCode() == other.hashCode();
 	}
 

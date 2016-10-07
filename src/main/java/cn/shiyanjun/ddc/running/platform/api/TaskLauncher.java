@@ -1,8 +1,11 @@
 package cn.shiyanjun.ddc.running.platform.api;
 
+import com.alibaba.fastjson.JSONObject;
+
 import cn.shiyanjun.ddc.api.LifecycleAware;
-import cn.shiyanjun.ddc.api.Task;
 import cn.shiyanjun.ddc.api.common.Typeable;
+import cn.shiyanjun.ddc.network.common.PeerMessage;
+import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
 
 /**
  * Launch a {@link Task} instance in the <code>Job Running Platform</code>
@@ -12,6 +15,7 @@ import cn.shiyanjun.ddc.api.common.Typeable;
  */
 public interface TaskLauncher extends Typeable, LifecycleAware {
 
-	void launchTask(int taskId);
+	void launchTask(long taskId, JSONObject params);
 	
+	void setTaskProgressReporter(RunnableMessageListener<PeerMessage> taskProgressReporter);
 }

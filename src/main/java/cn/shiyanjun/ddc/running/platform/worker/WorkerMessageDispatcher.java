@@ -1,7 +1,6 @@
 package cn.shiyanjun.ddc.running.platform.worker;
 
 import java.util.Optional;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -10,14 +9,13 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONObject;
-import com.google.common.collect.Queues;
 
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
 import cn.shiyanjun.ddc.network.common.AbstractMessageDispatcher;
 import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
-import cn.shiyanjun.ddc.running.platform.common.WorkerContext;
+import cn.shiyanjun.ddc.running.platform.api.TaskLauncher;
 import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
 import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
@@ -29,14 +27,13 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 
 	private static final Log LOG = LogFactory.getLog(WorkerMessageDispatcher.class);
 	private final HeartbeatReporter heartbeatReporter;
-	private final TaskProgressReporter taskProgressReporter;
+	private final RunnableMessageListener<PeerMessage> taskProgressReporter;
 	private final RemoteMessageReceiver remoteMessageReceiver;
 	private final WorkerContext workerContext;
 	private final String workerId;
 	private volatile String masterId;
 	private final String workerHost;
 	private final int heartbeatIntervalMillis;
-	private final BlockingQueue<PeerMessage> waitingTasksQueue = Queues.newLinkedBlockingQueue();
 	private ScheduledExecutorService scheduledExecutorService;
 	private ClientConnectionManager clientConnectionManager;
 	
@@ -44,7 +41,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		super(workerContext.getContext());
 		this.workerContext = workerContext;
 		masterId = workerContext.getMasterId();
-		workerId = workerContext.getThisPeerId();
+		workerId = workerContext.getPeerId();
 		workerHost = workerContext.getContext().get(RunpConfigKeys.WORKER_HOST);
 		heartbeatIntervalMillis = workerContext.getContext().getInt(RunpConfigKeys.WORKER_HEARTBEAT_INTERVALMILLIS, 60000);
 		
@@ -56,6 +53,13 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		register(heartbeatReporter);
 		register(remoteMessageReceiver);
 		
+		// create task launcher instances
+		workerContext.getResourceTypes().keySet().stream().forEach(taskType -> {
+			Optional<String> c = workerContext.getTaskLauncherClass(taskType);
+			c.ifPresent(clazz -> {
+				workerContext.getTaskLauncherFactory().registerObject(context, taskType.getCode(), clazz);
+			});
+		});
 	}
 
 	@Override
@@ -65,6 +69,14 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		
 		// try to register to master
 		clientConnectionManager.registerToMaster();
+		
+		// start task launchers
+		workerContext.getResourceTypes().keySet().forEach(taskType -> {
+			TaskLauncher launcher = workerContext.getTaskLauncherFactory().getObject(taskType.getCode());
+			launcher.setTaskProgressReporter(taskProgressReporter);
+			launcher.setType(taskType.getCode());
+			launcher.start();
+		});
 		
 		// send heartbeat to master periodically
 		scheduledExecutorService = Executors.newScheduledThreadPool(1, new NamedThreadFactory("HEARTBEAT"));
@@ -107,24 +119,27 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 		@Override
 		public void handle(PeerMessage message) {
 			RpcMessage rpcMessage = message.getRpcMessage();
+			JSONObject body = JSONObject.parseObject(message.getRpcMessage().getBody());
 			Optional<MessageType> messageType = MessageType.fromCode(rpcMessage.getType());
 			messageType.ifPresent(mt -> {
 				switch(mt) {
 					case TASK_ASSIGNMENT:
-						waitingTasksQueue.add(message);
 						LOG.info("Assigned task received: message=" + rpcMessage);
+						int taskTypeCode = body.getIntValue(JsonKeys.TASK_TYPE);
+						TaskLauncher launcher = workerContext.getTaskLauncherFactory().getObject(taskTypeCode);
+						long internalTaskId = rpcMessage.getId();
+						launcher.launchTask(internalTaskId, body.getJSONObject(JsonKeys.TASK_PARAMS));
 						break;
 					case ACK_WORKER_REGISTRATION:
-						JSONObject repliedAck = JSONObject.parseObject(message.getRpcMessage().getBody());
-						String status = repliedAck.getString(JsonKeys.STATUS);
+						String status = body.getString(JsonKeys.STATUS);
 						if(Status.SUCCEES.toString().equals(status)) {
-							masterId = repliedAck.getString(JsonKeys.MASTER_ID);
-							clientConnectionManager.notifyRegistered();
+							masterId = body.getString(JsonKeys.MASTER_ID);
+							clientConnectionManager.notifyRegistrationSucceeded();
 							LOG.debug("Succeeded to notify dispatcher.");
 							LOG.info("Worker registered: id=" + rpcMessage.getId() + ", type=" + rpcMessage.getType() + ", body=" + rpcMessage.getBody());
 						} else {
 							LOG.info("Worker registration failed: id=" + rpcMessage.getId() + ", type=" + rpcMessage.getType() + ", body=" + rpcMessage.getBody());
-							clientConnectionManager.notifyRegistered();
+							clientConnectionManager.notifyRegistrationFailed();
 						}
 						break;
 					default:
@@ -147,7 +162,7 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 
 		@Override
 		public void handle(PeerMessage message) {
-			getRpcService().send(message);
+			workerContext.getRpcService().send(message);
 		}
 
 	}
@@ -182,11 +197,11 @@ public class WorkerMessageDispatcher extends AbstractMessageDispatcher {
 				if(messageType.isPresent()) {
 					switch(messageType.get()) {
 						case WORKER_REGISTRATION:
-							getRpcService().ask(message);
+							workerContext.getRpcService().ask(message);
 							LOG.info("Registration message sent: message=" + m);
 							break;
 						case HEART_BEAT:
-							getRpcService().send(message);
+							workerContext.getRpcService().send(message);
 							LOG.debug("Heartbeart sent: message=" + m);
 							break;
 						default:

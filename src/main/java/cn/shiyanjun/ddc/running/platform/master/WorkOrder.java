@@ -1,9 +1,12 @@
-package cn.shiyanjun.ddc.running.platform.common;
+package cn.shiyanjun.ddc.running.platform.master;
+
+import cn.shiyanjun.ddc.api.constants.TaskType;
 
 public class WorkOrder {
 
 	private String targetWorkerId;
 	private WorkerInfo workerInfo;
+	private TaskType taskType;
 
 	public String getTargetWorkerId() {
 		return targetWorkerId;
@@ -19,6 +22,14 @@ public class WorkOrder {
 
 	public void setWorkerInfo(WorkerInfo workerInfo) {
 		this.workerInfo = workerInfo;
+	}
+
+	public TaskType getTaskType() {
+		return taskType;
+	}
+
+	public void setTaskType(TaskType taskType) {
+		this.taskType = taskType;
 	}
 	
 }

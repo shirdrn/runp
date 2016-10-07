@@ -5,19 +5,29 @@ import java.util.concurrent.ConcurrentMap;
 import com.google.common.collect.Maps;
 
 import cn.shiyanjun.ddc.api.Context;
-import cn.shiyanjun.ddc.network.common.MessageDispatcher;
+import cn.shiyanjun.ddc.network.api.MessageDispatcher;
 import cn.shiyanjun.ddc.network.common.RpcService;
+import cn.shiyanjun.ddc.network.constants.RpcConfigKeys;
+import cn.shiyanjun.ddc.running.platform.constants.RunpConfigKeys;
 import io.netty.channel.Channel;
 
-public class RunpContext {
+public abstract class RunpContext {
 
-	protected String masterId = "Master";
-	protected String thisPeerId;
+	private final String masterId;
+	protected String peerId;
 	protected final ConcurrentMap<String, Channel> peerIdToChannel = Maps.newConcurrentMap();
 	protected final ConcurrentMap<Channel, String> channelToPeerId = Maps.newConcurrentMap();
-	protected Context  context;
+	protected final  Context  context;
 	protected MessageDispatcher messageDispatcher;
 	protected RpcService rpcService;
+	protected final int rpcRetryConnectIntervalMillis;
+	
+	public RunpContext(Context context) {
+		super();
+		this.context = context;
+		masterId = context.get(RunpConfigKeys.MASTER_ID, "Master");
+		rpcRetryConnectIntervalMillis = context.getInt(RpcConfigKeys.NETWORK_RPC_RETRY_CONNECT_INTERVALMILLIS, 10000);
+	}
 	
 	public Channel getChannel(String peerId) {
 		return peerIdToChannel.get(peerId);
@@ -37,14 +47,6 @@ public class RunpContext {
 		channelToPeerId.put(channel, peerId);
 	}
 
-	public Context getContext() {
-		return context;
-	}
-
-	public void setContext(Context context) {
-		this.context = context;
-	}
-
 	public MessageDispatcher getMessageDispatcher() {
 		return messageDispatcher;
 	}
@@ -61,21 +63,20 @@ public class RunpContext {
 		this.rpcService = rpcService;
 	}
 
-	public String getThisPeerId() {
-		return thisPeerId;
-	}
-
-	public void setThisPeerId(String thisPeerId) {
-		this.thisPeerId = thisPeerId;
+	public String getPeerId() {
+		return peerId;
 	}
 
 	public String getMasterId() {
 		return masterId;
 	}
 
-	public void setMasterId(String masterId) {
-		this.masterId = masterId;
+	public Context getContext() {
+		return context;
 	}
 
-	
+	public int getRpcRetryConnectIntervalMillis() {
+		return rpcRetryConnectIntervalMillis;
+	}
+
 }

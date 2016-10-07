@@ -8,12 +8,10 @@ import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 public class Utils {
 
 	public static Integer[] toIntegerArray(MessageType... messageTypes) {
-		Integer[] types = new Integer[messageTypes.length];
-		Arrays.stream(messageTypes)
+		return Arrays.stream(messageTypes)
 			.map(mt -> mt.getCode())
 			.collect(Collectors.<Integer>toList())
-			.toArray(types);
-		return types;
+			.toArray(new Integer[messageTypes.length]);
 	}
 	
 }

@@ -2,12 +2,14 @@ package cn.shiyanjun.ddc.running.platform.common;
 
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.Lock;
@@ -16,32 +18,39 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.alibaba.fastjson.JSONObject;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 
 import cn.shiyanjun.ddc.api.Context;
-import cn.shiyanjun.ddc.api.Task;
-import cn.shiyanjun.ddc.api.TaskResult;
 import cn.shiyanjun.ddc.api.common.AbstractComponent;
 import cn.shiyanjun.ddc.api.constants.TaskStatus;
 import cn.shiyanjun.ddc.api.utils.NamedThreadFactory;
-import cn.shiyanjun.ddc.running.platform.api.Monitorable;
+import cn.shiyanjun.ddc.network.common.PeerMessage;
+import cn.shiyanjun.ddc.network.common.RpcMessage;
+import cn.shiyanjun.ddc.network.common.RunnableMessageListener;
+import cn.shiyanjun.ddc.running.platform.api.Task;
 import cn.shiyanjun.ddc.running.platform.api.TaskLauncher;
+import cn.shiyanjun.ddc.running.platform.api.TaskResult;
+import cn.shiyanjun.ddc.running.platform.constants.JsonKeys;
+import cn.shiyanjun.ddc.running.platform.constants.MessageType;
 import cn.shiyanjun.ddc.running.platform.utils.Time;
 
 public abstract class AbstractTaskLauncher extends AbstractComponent implements TaskLauncher {
 
 	private static final Log LOG = LogFactory.getLog(AbstractTaskLauncher.class);
 	private int type;
-	private final ConcurrentMap<Integer, RunningTask> waitingTasks = Maps.newConcurrentMap();
-	private final ConcurrentMap<Integer, RunningTask> runningTasks = Maps.newConcurrentMap();
-	private final ConcurrentMap<Integer, RunningTask> completedTasks = Maps.newConcurrentMap();
-	private final ConcurrentMap<Integer, Future<TaskResult>> taskResultFutures = Maps.newConcurrentMap();
-	private ExecutorService taskExecutorService;
-	private ExecutorService workerExecutorService;
+	private final ConcurrentMap<Long, RunningTask> waitingTasks = Maps.newConcurrentMap();
+	private final ConcurrentMap<Long, RunningTask> runningTasks = Maps.newConcurrentMap();
+	private final ConcurrentMap<Long, RunningTask> completedTasks = Maps.newConcurrentMap();
+	private final ConcurrentMap<Long, Future<TaskResult>> taskResultFutures = Maps.newConcurrentMap();
+	private ExecutorService launcherExecutorService;
 	private final Lock lock = new ReentrantLock();
 	private volatile boolean running = true;
 	private final int maxConcurrentRunningTaskCount;
 	private final Object signalKickOffTaskLock = new Object();
+	private RunnableMessageListener<PeerMessage> taskProgressReporter;
+	private ScheduledExecutorService scheduledExecutorService;
 	
 	public AbstractTaskLauncher(Context context) {
 		super(context);
@@ -50,17 +59,63 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 	
 	@Override
 	public void start() {
-		taskExecutorService = Executors.newCachedThreadPool(new NamedThreadFactory("TASK"));
-		workerExecutorService = Executors.newFixedThreadPool(2, new NamedThreadFactory("RESULT"));
-		workerExecutorService.execute(new TaskScheduler());
-		workerExecutorService.execute(new TaskResultMonitor());
+		Preconditions.checkArgument(taskProgressReporter != null, "Task progress reporter not set!");
+		launcherExecutorService = Executors.newCachedThreadPool(new NamedThreadFactory("LAUNCHER"));
+		launcherExecutorService.execute(new TaskScheduler());
+		launcherExecutorService.execute(new TaskResultMonitor());
+		
+		scheduledExecutorService = Executors.newScheduledThreadPool(1, new NamedThreadFactory("RESULT-REPORTER"));
+		int period = 10000;
+		scheduledExecutorService.scheduleAtFixedRate(() -> reportTaskProgress(), 5000, period, TimeUnit.MILLISECONDS);
+	}
+	
+	@Override
+	public void setTaskProgressReporter(RunnableMessageListener<PeerMessage> taskProgressReporter) {
+		this.taskProgressReporter = taskProgressReporter;		
 	}
 	
 	@Override
 	public void stop() {
-		taskExecutorService.shutdown();
+		launcherExecutorService.shutdown();
 		running = false;
-		workerExecutorService.shutdown();
+	}
+	
+	private void reportTaskProgress() {
+		Iterator<Entry<Long, RunningTask>> completedTasksIter = completedTasks.entrySet().iterator();
+		while(completedTasksIter.hasNext()) {
+			Entry<Long, RunningTask> entry = completedTasksIter.next();
+			PeerMessage message = createTaskProgressMessage(entry.getKey(), entry.getValue().task.getTaskStatus());
+			taskProgressReporter.addMessage(message);
+			completedTasksIter.remove();
+		}
+		
+		checkNonConpletedQueues(runningTasks);
+		checkNonConpletedQueues(waitingTasks);
+	}
+	
+	private void checkNonConpletedQueues(ConcurrentMap<Long, RunningTask> q) {
+		Iterator<Entry<Long, RunningTask>> iter = q.entrySet().iterator();
+		while(iter.hasNext()) {
+			Entry<Long, RunningTask> entry = iter.next();
+			PeerMessage message = createTaskProgressMessage(entry.getKey(), TaskStatus.RUNNING);
+			taskProgressReporter.addMessage(message);
+		}
+	}
+	
+	private PeerMessage createTaskProgressMessage(long taskId, TaskStatus taskStatus) {
+		PeerMessage peerMessage = new PeerMessage();
+		
+		RpcMessage rpcMessage = new RpcMessage();
+		rpcMessage.setId(Time.now());
+		rpcMessage.setType(MessageType.TASK_PROGRESS.getCode());
+		JSONObject body = new JSONObject(true);
+		body.put(JsonKeys.TASK_ID, taskId);
+		body.put(JsonKeys.TASK_STATUS, taskStatus.toString());
+		rpcMessage.setBody(body.toString());
+		rpcMessage.setTimestamp(Time.now());
+		
+		peerMessage.setRpcMessage(rpcMessage);
+		return peerMessage;
 	}
 
 	@Override
@@ -74,34 +129,42 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 	}
 
 	@Override
-	public void launchTask(int taskId) {
+	public void launchTask(long taskId, JSONObject params) {
+		// report to master when a task was received to launch
+		PeerMessage message = createTaskProgressMessage(taskId, TaskStatus.RUNNING);
+		taskProgressReporter.addMessage(message);
+		
 		lock.lock();
 		Task task = null;
 		final RunningTask rTask = new RunningTask();
 		try {
-			task = createTask(taskId);
+			task = createTask(params);
+			task.setId(taskId);
+			task.setType(type);
+			rTask.task = task;
+			long now = Time.now();
+			rTask.lastActiveTime = now;
 			if(runningTasks.size() >= maxConcurrentRunningTaskCount) {
-				rTask.setTask(task);
-				long now = Time.now();
-				rTask.setStartTime(now);
-				rTask.updateLastActiveTime(now);
+				task.setTaskStatus(TaskStatus.QUEUEING);
 				waitingTasks.putIfAbsent(taskId, rTask);
 				LOG.info("Task waiting: taskId=" + taskId);
 			} else {
+				task.setTaskStatus(TaskStatus.RUNNING);
+				rTask.startTime = now;
 				submitTask(taskId, rTask);
+				LOG.info("Task submitted: " + rTask);
 			}
 		} catch(Exception e) {
-			LOG.error("Fail to launch task: taskId=" + taskId + ", task=" + task);
+			LOG.error("Fail to launch task: taskId=" + taskId + ", task=" + task, e);
 		} finally {
 			lock.unlock();
 		}
 	}
 
-	private void submitTask(int taskId, RunningTask rTask) {
+	private void submitTask(long taskId, RunningTask rTask) {
 		runningTasks.putIfAbsent(taskId, rTask);
-		Future<TaskResult> f = taskExecutorService.submit(new TaskRunner(rTask.getTask()));
+		Future<TaskResult> f = launcherExecutorService.submit(new TaskRunner(rTask.task));
 		taskResultFutures.putIfAbsent(taskId, f);
-		LOG.info("Task launched: " + rTask.getTask());
 	}
 
 	/**
@@ -112,11 +175,11 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 	protected abstract TaskResult runTask(Task task);
 
 	/**
-	 * Create a {@link Task} instance from the given task ID.
+	 * Create a {@link Task} instance from the given task parameters.
 	 * @param taskId
 	 * @return
 	 */
-	protected abstract Task createTask(int taskId);
+	protected abstract Task createTask(JSONObject params);
 	
 	private final class TaskRunner implements Callable<TaskResult> {
 		
@@ -143,11 +206,13 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 							signalKickOffTaskLock.wait();
 						}
 						if(!waitingTasks.isEmpty()) {
-							Iterator<Integer> iter = waitingTasks.keySet().iterator();
-							int taskId = iter.next();
+							Iterator<Long> iter = waitingTasks.keySet().iterator();
+							long taskId = iter.next();
 							RunningTask rTask = waitingTasks.get(taskId);
+							rTask.startTime = Time.now();
 							iter.remove();
 							submitTask(taskId, rTask);
+							LOG.info("Task submitted: " + rTask);
 						}
 					}
 					
@@ -175,10 +240,10 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 			while(running) {
 				try {
 					while(!taskResultFutures.isEmpty()) {
-						final Iterator<Map.Entry<Integer,Future<TaskResult>>> iter = taskResultFutures.entrySet().iterator();
+						final Iterator<Map.Entry<Long, Future<TaskResult>>> iter = taskResultFutures.entrySet().iterator();
 						while(iter.hasNext()) {
-							Map.Entry<Integer,Future<TaskResult>> entry = iter.next();
-							final int taskId = entry.getKey();
+							Map.Entry<Long, Future<TaskResult>> entry = iter.next();
+							final long taskId = entry.getKey();
 							final Future<TaskResult> f = entry.getValue();
 							try {
 								if(!f.isDone() && !f.isCancelled()) {
@@ -221,37 +286,38 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 			}
 		}
 
-		private void doTaskFailure(int taskId, Exception cause) {
+		private void doTaskFailure(long taskId, Exception cause) {
 			RunningTask rTask = runningTasks.remove(taskId);
 			long doneTime = Time.now();
-			rTask.updateLastActiveTime(doneTime);
-			rTask.setDoneTime(doneTime);
-			rTask.getTask().setStatus(TaskStatus.FAILED);
-			rTask.setCause(cause);
+			rTask.lastActiveTime = doneTime;
+			rTask.doneTime = doneTime;
+			rTask.task.setTaskStatus(TaskStatus.FAILED);
+			rTask.cause = cause;
 			completedTasks.put(taskId, rTask);
 		}
 
-		private void doTaskCompletion(int taskId, TaskResult taskResult) {
+		private void doTaskCompletion(long taskId, TaskResult taskResult) {
 			RunningTask rTask = runningTasks.remove(taskId);
 			long doneTime = Time.now();
-			rTask.updateLastActiveTime(doneTime);
-			rTask.setDoneTime(doneTime);
+			rTask.lastActiveTime = doneTime;
+			rTask.doneTime = doneTime;
 			if(taskResult != null) {
-				rTask.getTask().setStatus(TaskStatus.SUCCEEDED);
+				rTask.task.setTaskStatus(TaskStatus.SUCCEEDED);
 			} else {
-				rTask.getTask().setStatus(TaskStatus.FAILED);
+				rTask.task.setTaskStatus(TaskStatus.FAILED);
 			}
 			completedTasks.put(taskId, rTask);
+			LOG.info("Task completed: " + rTask);
 		}
 
-		private boolean doTaskAlive(int taskId, Future<TaskResult> f) throws InterruptedException, ExecutionException {
+		private boolean doTaskAlive(long taskId, Future<TaskResult> f) throws InterruptedException, ExecutionException {
 			TaskResult result = null;
 			try {
 				result = f.get(fetchTaskResultTimeoutMillis, TimeUnit.MILLISECONDS);
 			} catch (TimeoutException e) {
 				if(runningTasks.containsKey(taskId)) {
 					RunningTask rTask = runningTasks.get(taskId);
-					rTask.updateLastActiveTime(Time.now());
+					rTask.lastActiveTime = Time.now();
 				} else {
 					LOG.fatal("Task summitted, but not in running task queue: taskId=" + taskId);
 				}
@@ -266,59 +332,26 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 		}
 	}
 	
-	class RunningTask implements Monitorable {
+	class RunningTask {
 
-		private Task task;
-		private long startTime;
-		private long doneTime;
-		private long lastActiveTime;
-		private Exception cause;
-
+		Task task;
+		long startTime;
+		long doneTime;
+		long lastActiveTime;
+		Exception cause;
+		
 		@Override
-		public void setStartTime(long startTime) {
-			this.startTime = startTime;		
+		public String toString() {
+			return new StringBuffer()
+					.append("taskId=" + task.getId())
+					.append(", taskType=" + task.getType())
+					.append(", taskStatus=" + task.getTaskStatus())
+					.append(", startTime=" + Time.readableTime(startTime))
+					.append(", lastActiveTime=" + Time.readableTime(lastActiveTime))
+					.append(", doneTime=").append(doneTime == 0L ? "" : Time.readableTime(doneTime))
+					.toString();
 		}
 
-		@Override
-		public long getStartTime() {
-			return startTime;
-		}
-
-		@Override
-		public void setDoneTime(long doneTime) {
-			this.doneTime = doneTime;
-		}
-
-		@Override
-		public long getDoneTime() {
-			return doneTime;
-		}
-
-		@Override
-		public void updateLastActiveTime(long lastActiveTime) {
-			this.lastActiveTime = lastActiveTime;		
-		}
-
-		@Override
-		public long getLastActiveTime() {
-			return lastActiveTime;
-		}
-
-		public Task getTask() {
-			return task;
-		}
-
-		public void setTask(Task task) {
-			this.task = task;
-		}
-
-		public Exception getCause() {
-			return cause;
-		}
-
-		public void setCause(Exception cause) {
-			this.cause = cause;
-		}
 	}
 
 }

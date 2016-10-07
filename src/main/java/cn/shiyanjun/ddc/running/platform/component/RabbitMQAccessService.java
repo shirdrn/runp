@@ -1,7 +1,6 @@
 package cn.shiyanjun.ddc.running.platform.component;
 
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -9,6 +8,7 @@ import java.util.concurrent.Executors;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.google.common.collect.Sets;
 import com.rabbitmq.client.ConnectionFactory;
 import com.rabbitmq.client.Consumer;
 
@@ -18,7 +18,7 @@ import cn.shiyanjun.ddc.running.platform.common.AbstractMQAccessService;
 public class RabbitMQAccessService extends AbstractMQAccessService {
 
 	private static final Log LOG = LogFactory.getLog(RabbitMQAccessService.class);
-	private final Set<Consumer> consumers = new HashSet<>();
+	private final Set<Consumer> consumers = Sets.newHashSet();
 	private ExecutorService executorService;
 	private volatile boolean running;
 	

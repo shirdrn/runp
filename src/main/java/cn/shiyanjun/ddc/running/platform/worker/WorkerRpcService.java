@@ -11,7 +11,6 @@ import cn.shiyanjun.ddc.network.common.OutboxMessage;
 import cn.shiyanjun.ddc.network.common.PeerMessage;
 import cn.shiyanjun.ddc.network.common.RpcMessage;
 import cn.shiyanjun.ddc.network.common.RpcService;
-import cn.shiyanjun.ddc.running.platform.common.WorkerContext;
 import io.netty.channel.Channel;
 
 public class WorkerRpcService extends RpcService {
@@ -58,7 +57,7 @@ public class WorkerRpcService extends RpcService {
 			InboxMessage inboxMessage = new InboxMessage();
 			inboxMessage.setRpcMessage(message);
 			inboxMessage.setFromEndpointId(workerContext.getPeerId(channel));
-			inboxMessage.setToEndpointId(workerContext.getThisPeerId());
+			inboxMessage.setToEndpointId(workerContext.getPeerId());
 			inboxMessage.setChannel(channel);
 			inbox.collect(inboxMessage);
 			LOG.debug("Inbox collected: rpcMessage=" + message);
@@ -72,20 +71,22 @@ public class WorkerRpcService extends RpcService {
 		
 		while(true) {
 			try {
-				LOG.info("Try to connect master...");
-				clientConnectionManager.startEndpoint(NettyRpcClient.class);
+				LOG.info("Try to connect to master...");
+				clientConnectionManager.startEndpoint(NettyRpcClient.class, WorkerChannelHandler.class);
 				LOG.info("Connected.");
 				
 				// re-register to master
+				LOG.info("Try to re-register to master...");
 				clientConnectionManager.registerToMaster();
 				break;
 			} catch (Exception e) {
 				try {
-					Thread.sleep(5000);
+					Thread.sleep(workerContext.getRpcRetryConnectIntervalMillis());
 				} catch (InterruptedException e1) { }
 			}
-			
 		}
+		
+		// after endpoint started, await
 		try {
 			clientConnectionManager.getEndpoint().await();
 		} catch (InterruptedException e) {

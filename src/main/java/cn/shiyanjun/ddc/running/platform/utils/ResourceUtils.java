@@ -1,10 +1,9 @@
 package cn.shiyanjun.ddc.running.platform.utils;
 
-import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import com.google.common.collect.Maps;
 import com.rabbitmq.client.ConnectionFactory;
 
 import cn.shiyanjun.ddc.api.Context;
@@ -12,9 +11,9 @@ import cn.shiyanjun.ddc.api.common.ContextImpl;
 
 public class ResourceUtils {
 
-	private static final ConcurrentMap<Class<?>, Object> pooledInstances = new ConcurrentHashMap<>();
-	private static final ConcurrentMap<Class<?>, String> pooledConfigurations = new ConcurrentHashMap<>();
-	private static final Map<Class<?>, ResourceBuilder<?>> builders = new HashMap<>();
+	private static final ConcurrentMap<Class<?>, Object> pooledInstances = Maps.newConcurrentMap();
+	private static final ConcurrentMap<Class<?>, String> pooledConfigurations = Maps.newConcurrentMap();
+	private static final Map<Class<?>, ResourceBuilder<?>> builders = Maps.newHashMap();
 	
 	static {
 		// register resource builder instances
@@ -50,7 +49,7 @@ public class ResourceUtils {
 		}
 	}
 	
-	private  static final class RabbitConnectionFactoryBuilder extends AbstractResourceBuilder implements ResourceBuilder<ConnectionFactory> {
+	private static final class RabbitConnectionFactoryBuilder extends AbstractResourceBuilder implements ResourceBuilder<ConnectionFactory> {
 
 		private static String RABBITMQ_HOST = "rabbitmq.host";
 		private static String RABBITMQ_PORT = "rabbitmq.port";
