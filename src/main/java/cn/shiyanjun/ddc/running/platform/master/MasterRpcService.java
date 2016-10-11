@@ -61,6 +61,7 @@ public class MasterRpcService extends RpcService {
 			InboxMessage inboxMessage = new InboxMessage();
 			String from = context.getPeerId(channel);
 			LOG.debug("Master channel read: workerId=" + from + ", channel=" + channel);
+			
 			inboxMessage.setRpcMessage(rpcMessage);
 			inboxMessage.setFromEndpointId(from);
 			inboxMessage.setToEndpointId(context.getPeerId());

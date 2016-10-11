@@ -2,6 +2,9 @@ package cn.shiyanjun.ddc.running.platform.common;
 
 import java.util.List;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import com.google.common.collect.Lists;
 
 import cn.shiyanjun.ddc.api.common.AbstractComponent;
@@ -12,6 +15,7 @@ import io.netty.channel.ChannelHandler;
 
 public abstract class AbstractConnectionManager extends AbstractComponent implements ConnectionManager {
 
+	private static final Log LOG = LogFactory.getLog(AbstractConnectionManager.class);
 	protected volatile NettyRpcEndpoint endpoint;
 	private final RunpContext context;
 	
@@ -30,6 +34,14 @@ public abstract class AbstractConnectionManager extends AbstractComponent implem
 				new Object[] { context }));
 		endpoint = NettyRpcEndpoint.newEndpoint(context.getContext(), endpointClass, handlerInfos);
 		endpoint.start();
+	}
+	
+	@Override
+	public void stopEndpoint() {
+		if(endpoint != null) {
+			endpoint.stop();
+			LOG.info("Endpoint stopped: " + endpoint);
+		}
 	}
 	
 	@Override

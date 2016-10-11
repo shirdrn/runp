@@ -66,11 +66,15 @@ public class WorkerRpcService extends RpcService {
 
 	@Override
 	public void receive(Channel channel, Throwable cause) {
-		workerContext.remove(workerContext.getMasterId(), masterChannel);
-		masterChannel = null;
+		if(masterChannel != null) {
+			workerContext.remove(workerContext.getMasterId(), masterChannel);
+			masterChannel = null;
+		}
 		
 		while(true) {
 			try {
+				clientConnectionManager.stopEndpoint();
+				
 				LOG.info("Try to connect to master...");
 				clientConnectionManager.startEndpoint(NettyRpcClient.class, WorkerChannelHandler.class);
 				LOG.info("Connected.");

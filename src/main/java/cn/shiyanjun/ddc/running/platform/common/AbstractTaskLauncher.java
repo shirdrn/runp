@@ -89,11 +89,11 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 			completedTasksIter.remove();
 		}
 		
-		checkNonConpletedQueues(runningTasks);
-		checkNonConpletedQueues(waitingTasks);
+		checkPendingCompletedQueues(runningTasks);
+		checkPendingCompletedQueues(waitingTasks);
 	}
 	
-	private void checkNonConpletedQueues(ConcurrentMap<Long, RunningTask> q) {
+	private void checkPendingCompletedQueues(ConcurrentMap<Long, RunningTask> q) {
 		Iterator<Entry<Long, RunningTask>> iter = q.entrySet().iterator();
 		while(iter.hasNext()) {
 			Entry<Long, RunningTask> entry = iter.next();

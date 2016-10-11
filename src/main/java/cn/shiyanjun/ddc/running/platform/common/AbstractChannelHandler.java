@@ -18,6 +18,13 @@ public abstract class AbstractChannelHandler extends ChannelInboundHandlerAdapte
 	}
 	
 	@Override
+	public void channelUnregistered(ChannelHandlerContext ctx) throws Exception {
+		super.channelUnregistered(ctx);
+		ctx.channel().close();
+		context.getRpcService().receive(ctx.channel(), new Exception("Channel unregisted"));
+	}
+	
+	@Override
 	public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
 		super.exceptionCaught(ctx, cause);
 		ctx.channel().close();
