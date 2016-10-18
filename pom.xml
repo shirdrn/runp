@@ -7,7 +7,7 @@
 	<name>Job Running Platform</name>
 
 	<properties>
-		<ddc.version>0.0.1-SNAPSHOT</ddc.version>
+		<platform.version>0.0.1-SNAPSHOT</platform.version>
 		<fastjson.version>1.2.7</fastjson.version>
 		<guava.version>19.0</guava.version>
 		<amqp-client.version>3.6.5</amqp-client.version>
@@ -16,13 +16,13 @@
 	<dependencies>
 		<dependency>
 			<groupId>cn.shiyanjun</groupId>
-			<artifactId>commons-api</artifactId>
-			<version>${ddc.version}</version>
+			<artifactId>platform-api</artifactId>
+			<version>${platform.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>cn.shiyanjun</groupId>
 			<artifactId>network-rpc</artifactId>
-			<version>${ddc.version}</version>
+			<version>${platform.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>com.google.guava</groupId>
