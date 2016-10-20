@@ -1,4 +1,4 @@
-package cn.shiyanjun.running.platform.master;
+package cn.shiyanjun.running.platform.component.master;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;

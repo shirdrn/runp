@@ -14,11 +14,11 @@ import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
 import cn.shiyanjun.platform.network.NettyRpcClient;
 import cn.shiyanjun.platform.network.api.MessageDispatcher;
 import cn.shiyanjun.platform.network.common.RpcService;
-import cn.shiyanjun.running.platform.worker.ClientConnectionManager;
-import cn.shiyanjun.running.platform.worker.WorkerChannelHandler;
-import cn.shiyanjun.running.platform.worker.WorkerContext;
-import cn.shiyanjun.running.platform.worker.WorkerMessageDispatcher;
-import cn.shiyanjun.running.platform.worker.WorkerRpcService;
+import cn.shiyanjun.running.platform.component.worker.ClientConnectionManager;
+import cn.shiyanjun.running.platform.component.worker.WorkerChannelHandler;
+import cn.shiyanjun.running.platform.component.worker.WorkerContext;
+import cn.shiyanjun.running.platform.component.worker.WorkerMessageDispatcher;
+import cn.shiyanjun.running.platform.component.worker.WorkerRpcService;
 
 public class Worker implements LifecycleAware {
 

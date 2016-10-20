@@ -1,4 +1,4 @@
-package cn.shiyanjun.running.platform.worker.launchers;
+package cn.shiyanjun.running.platform.component.worker.launchers;
 
 import com.alibaba.fastjson.JSONObject;
 
@@ -7,7 +7,7 @@ import cn.shiyanjun.running.platform.api.Task;
 import cn.shiyanjun.running.platform.api.TaskResult;
 import cn.shiyanjun.running.platform.common.AbstractTaskLauncher;
 import cn.shiyanjun.running.platform.common.DefaultTaskResult;
-import cn.shiyanjun.running.platform.worker.DefaultTask;
+import cn.shiyanjun.running.platform.component.worker.DefaultTask;
 
 public class RestPollingTaskLauncher extends AbstractTaskLauncher {
 

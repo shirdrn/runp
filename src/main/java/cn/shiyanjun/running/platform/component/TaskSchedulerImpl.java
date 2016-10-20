@@ -11,10 +11,10 @@ import org.apache.commons.logging.LogFactory;
 import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.running.platform.api.TaskScheduler;
-import cn.shiyanjun.running.platform.master.MasterContext;
-import cn.shiyanjun.running.platform.master.ResourceData;
-import cn.shiyanjun.running.platform.master.WorkOrder;
-import cn.shiyanjun.running.platform.master.WorkerInfo;
+import cn.shiyanjun.running.platform.component.master.MasterContext;
+import cn.shiyanjun.running.platform.component.master.ResourceData;
+import cn.shiyanjun.running.platform.component.master.WorkOrder;
+import cn.shiyanjun.running.platform.component.master.WorkerInfo;
 
 public class TaskSchedulerImpl extends AbstractComponent implements TaskScheduler {
 
