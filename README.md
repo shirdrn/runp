@@ -1,5 +1,3 @@
-# runp
-Job Running Plarform
 
 ## What is runp?
 
