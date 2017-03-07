@@ -3,6 +3,7 @@ package cn.shiyanjun.running.platform.common;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
@@ -135,25 +136,27 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 		taskProgressReporter.addMessage(message);
 		
 		lock.lock();
-		Task task = null;
+		Optional<Task> task = Optional.empty();
 		final RunningTask rTask = new RunningTask();
 		try {
 			task = createTask(params);
-			task.setId(taskId);
-			task.setType(type);
-			rTask.task = task;
-			long now = Time.now();
-			rTask.lastActiveTime = now;
-			if(runningTasks.size() >= maxConcurrentRunningTaskCount) {
-				task.setTaskStatus(TaskStatus.QUEUEING);
-				waitingTasks.putIfAbsent(taskId, rTask);
-				LOG.info("Task waiting: taskId=" + taskId);
-			} else {
-				task.setTaskStatus(TaskStatus.RUNNING);
-				rTask.startTime = now;
-				submitTask(taskId, rTask);
-				LOG.info("Task submitted: " + rTask);
-			}
+			task.ifPresent(t -> {
+				t.setId(taskId);
+				t.setType(type);
+				rTask.task = t;
+				long now = Time.now();
+				rTask.lastActiveTime = now;
+				if(runningTasks.size() >= maxConcurrentRunningTaskCount) {
+					t.setTaskStatus(TaskStatus.QUEUEING);
+					waitingTasks.putIfAbsent(taskId, rTask);
+					LOG.info("Task waiting: taskId=" + taskId);
+				} else {
+					t.setTaskStatus(TaskStatus.RUNNING);
+					rTask.startTime = now;
+					submitTask(taskId, rTask);
+					LOG.info("Task submitted: " + rTask);
+				}
+			});
 		} catch(Exception e) {
 			LOG.error("Fail to launch task: taskId=" + taskId + ", task=" + task, e);
 		} finally {
@@ -172,14 +175,14 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 	 * @param task
 	 * @return
 	 */
-	protected abstract TaskResult runTask(Task task);
+	protected abstract Optional<TaskResult> runTask(Task task);
 
 	/**
 	 * Create a {@link Task} instance from the given task parameters.
 	 * @param taskId
 	 * @return
 	 */
-	protected abstract Task createTask(JSONObject params);
+	protected abstract Optional<Task> createTask(JSONObject params);
 	
 	private final class TaskRunner implements Callable<TaskResult> {
 		
@@ -191,7 +194,7 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 		
 		@Override
 		public TaskResult call() throws Exception {
-			return runTask(task);
+			return runTask(task).get();
 		}
 	}
 	
@@ -258,7 +261,7 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 								
 								// task is done
 								if(f.isDone()) {
-									doTaskCompletion(taskId, f.get());
+									doTaskCompletion(taskId, Optional.ofNullable(f.get()));
 									iter.remove();
 									scheduleNextTask();
 								}
@@ -296,12 +299,12 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 			completedTasks.put(taskId, rTask);
 		}
 
-		private void doTaskCompletion(long taskId, TaskResult taskResult) {
+		private void doTaskCompletion(long taskId, Optional<TaskResult> taskResult) {
 			RunningTask rTask = runningTasks.remove(taskId);
 			long doneTime = Time.now();
 			rTask.lastActiveTime = doneTime;
 			rTask.doneTime = doneTime;
-			if(taskResult != null) {
+			if(taskResult.isPresent()) {
 				rTask.task.setTaskStatus(TaskStatus.SUCCEEDED);
 			} else {
 				rTask.task.setTaskStatus(TaskStatus.FAILED);
@@ -311,9 +314,9 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 		}
 
 		private boolean doTaskAlive(long taskId, Future<TaskResult> f) throws InterruptedException, ExecutionException {
-			TaskResult result = null;
+			Optional<TaskResult> taskResult = Optional.empty();
 			try {
-				result = f.get(fetchTaskResultTimeoutMillis, TimeUnit.MILLISECONDS);
+				taskResult = Optional.ofNullable(f.get(fetchTaskResultTimeoutMillis, TimeUnit.MILLISECONDS));
 			} catch (TimeoutException e) {
 				if(runningTasks.containsKey(taskId)) {
 					RunningTask rTask = runningTasks.get(taskId);
@@ -325,8 +328,8 @@ public abstract class AbstractTaskLauncher extends AbstractComponent implements 
 			}
 			
 			// if task has already completed
-			if(result != null) {
-				doTaskCompletion(taskId, result);
+			if(taskResult.isPresent()) {
+				doTaskCompletion(taskId, taskResult);
 			}
 			return false;
 		}

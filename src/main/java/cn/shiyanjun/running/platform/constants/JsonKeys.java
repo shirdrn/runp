@@ -17,4 +17,7 @@ public interface JsonKeys {
 	String CAPACITY = "capacity";
 	String TASK_STATUS = "taskStatus";
 	String TASK_STATUS_DESC = "taskStatusDesc";
+	
+	String SERVICE_URL = "serviceUrl";
+	String POLLING_URL = "pollingUrl";
 }

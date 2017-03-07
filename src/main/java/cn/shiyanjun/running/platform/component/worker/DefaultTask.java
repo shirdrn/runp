@@ -9,7 +9,7 @@ public class DefaultTask implements Task {
 
 	private Long id;
 	private int type;
-	private JSONObject params;
+	protected JSONObject params;
 	private TaskStatus status;
 	private String result;
 	
