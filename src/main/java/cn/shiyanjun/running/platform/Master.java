@@ -122,7 +122,6 @@ public final class Master implements LifecycleAware {
 	
 			executorService.execute(new TaskRequestMQMessageConsumer(taskRequestMQAccessService.getQueueName(), taskRequestMQAccessService.getChannel()));
 			executorService.execute(new SchedulingThread());
-			executorService.execute(new MockedMQProducer());
 			connectionManager.getEndpoint().await();
 		} catch (Exception e) {
 			Throwables.propagate(e);
@@ -223,31 +222,6 @@ public final class Master implements LifecycleAware {
 					e.printStackTrace();
 				}
 			}
-		}
-	}
-	
-	private final class MockedMQProducer extends Thread {
-		
-		@Override
-		public void run() {
-			while(true) {
-				try {
-					JSONObject body = new JSONObject(true);
-					body.put(JsonKeys.TASK_TYPE, TaskType.GREEN_PLUM.getCode());
-					body.put(JsonKeys.TASK_TYPE_DESC, TaskType.GREEN_PLUM);
-					JSONObject params = new JSONObject(true);
-					params.put("a", "aaaaaaaaaa");
-					params.put("b", "bbbbbbbbbb");
-					params.put("c", "cccccccccc");
-					body.put(JsonKeys.TASK_PARAMS, params);
-					taskRequestMQAccessService.produceMessage(body.toJSONString());
-					LOG.info("Message published: " + body);
-					Thread.sleep(60000);
-				} catch (InterruptedException e) {
-					e.printStackTrace();
-				}
-			}
-			
 		}
 	}
 	
